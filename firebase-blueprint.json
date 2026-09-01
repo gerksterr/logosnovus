@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "Text": {
+      "title": "TextItem",
+      "description": "A foreign symbolic text document stored by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "author": { "type": "string" },
+        "language": { "type": "string" },
+        "content": { "type": "string" },
+        "wordBlueprintId": { "type": "string" },
+        "passageBlueprintId": { "type": "string" },
+        "tags": { "type": "array" },
+        "notes": { "type": "string" },
+        "scrollPosition": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "syncedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "language", "content"]
+    },
+    "Blueprint": {
+      "title": "QueryBlueprint",
+      "description": "An LLM decipher query blueprint template",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["word", "passage"] },
+        "template": { "type": "string" },
+        "description": { "type": "string" },
+        "isDefault": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "syncedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type", "template"]
+    },
+    "Annotation": {
+      "title": "Annotation",
+      "description": "Deciphered word note or passage symbolism record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "textId": { "type": "string" },
+        "type": { "type": "string", "enum": ["word", "passage"] },
+        "target": { "type": "string" },
+        "blueprintName": { "type": "string" },
+        "queryUsed": { "type": "string" },
+        "result": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "modelUsed": { "type": "string" },
+        "providerUsed": { "type": "string" },
+        "syncedAt": { "type": "string" }
+      },
+      "required": ["id", "textId", "type", "target", "result"]
+    },
+    "UserConfig": {
+      "title": "UserConfig",
+      "description": "User configuration, reading settings, and scroll positions",
+      "type": "object",
+      "properties": {
+        "llmConfig": { "type": "object" },
+        "readerSettings": { "type": "object" },
+        "scrollPositions": { "type": "object" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}/texts/{textId}": {
+      "schema": "Text",
+      "description": "User foreign symbolic texts"
+    },
+    "/users/{userId}/blueprints/{blueprintId}": {
+      "schema": "Blueprint",
+      "description": "User query blueprints"
+    },
+    "/users/{userId}/annotations/{annotationId}": {
+      "schema": "Annotation",
+      "description": "Deciphered annotations and notes"
+    },
+    "/users/{userId}/settings/config": {
+      "schema": "UserConfig",
+      "description": "User settings and reading preferences"
+    },
+    "/users/{userId}/meta/syncInfo": {
+      "schema": "object",
+      "description": "Sync metadata and device stats"
+    }
+  }
+}
