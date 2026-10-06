@@ -13,7 +13,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   hasActiveText,
 }) => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-amber-950/95 dark:bg-stone-900/95 backdrop-blur-md border-t border-amber-900/40 dark:border-stone-800 text-amber-200 shadow-lg md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 bg-amber-950/95 dark:bg-stone-900/95 backdrop-blur-md border-t border-amber-900/40 dark:border-stone-800 text-amber-200 shadow-lg md:hidden pb-[env(safe-area-inset-bottom,0px)]">
       <div className="max-w-md mx-auto grid grid-cols-5 h-16">
         {/* Library Tab */}
         <button

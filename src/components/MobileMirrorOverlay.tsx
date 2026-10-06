@@ -39,13 +39,15 @@ export const MobileMirrorOverlay: React.FC<MobileMirrorOverlayProps> = ({
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
 
+  // On mobile / Android, the bottom navigation bar is fixed at bottom-0 with h-16 (64px) plus safe-area-inset.
+  // We place the mirror overlay above the bottom navigation bar with clear margin and z-50 so it is never covered.
   const containerVisibilityClasses = showOnDesktop 
-    ? 'fixed bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[94vw] sm:w-auto sm:min-w-[460px] max-w-md animate-in slide-in-from-bottom-3 fade-in duration-200 select-none' 
-    : 'fixed bottom-5 left-1/2 -translate-x-1/2 z-40 sm:hidden w-[94vw] max-w-md animate-in slide-in-from-bottom-3 fade-in duration-200 select-none';
+    ? 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 left-1/2 -translate-x-1/2 z-50 w-[94vw] sm:w-auto sm:min-w-[460px] max-w-md animate-in slide-in-from-bottom-3 fade-in duration-200 select-none' 
+    : 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 left-1/2 -translate-x-1/2 z-50 sm:hidden w-[94vw] max-w-md animate-in slide-in-from-bottom-3 fade-in duration-200 select-none';
 
   const minimizedVisibilityClasses = showOnDesktop
-    ? 'fixed bottom-5 sm:bottom-6 right-4 sm:right-6 z-40 animate-in fade-in zoom-in-95 duration-200'
-    : 'fixed bottom-5 right-4 z-40 sm:hidden animate-in fade-in zoom-in-95 duration-200';
+    ? 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 right-4 sm:right-6 z-50 animate-in fade-in zoom-in-95 duration-200'
+    : 'fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-6 right-4 z-50 sm:hidden animate-in fade-in zoom-in-95 duration-200';
 
   // If minimized, show a compact floating toggle bubble
   if (isMinimized) {

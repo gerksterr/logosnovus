@@ -48,6 +48,24 @@ export function cleanWordToken(token: string): string {
 }
 
 /**
+ * Regex for identifying glued word boundaries where words are joined without whitespace
+ * due to punctuation/signs (e.g. 'Stern“—so', 'star"-so', 'star”-so', 'Liebe?—so', 'Mensch—und', 'Stern“so', 'Liebe?Was').
+ * It splits:
+ * 1) Words ending in quotes/brackets/punct followed by a hyphen/em-dash/en-dash/double-dash (e.g. 'star"-so', 'Stern“—so') and next word
+ * 2) Words ending in em-dash, en-dash, or double-dash followed by next word
+ * 3) Words ending in closing quotes/brackets followed by next word
+ * 4) Words ending in sentence punctuation (?, !) followed by next word
+ * Keeps intra-word hyphens ('was-silent', 'S-Bahn'), contractions ('it\'s', 'don\'t'), and composite annotations ('saw[1:looked-at]') intact.
+ */
+export const GLUED_WORD_SPLIT_REGEX = /(?<=[^\s]+?(?:[“"”’'»«›‹\)\}\]\.\?!,:;]+[-\u2014\u2013—–]+|--+|[\u2014\u2013—–]|--+|[“"”»«›‹\)\}\]](?!['’]\p{L})|[\?!]))(?=[\p{L}\p{M}])/gu;
+
+export function splitGluedWords(chunk: string): string[] {
+  if (!chunk || chunk.length <= 1) return [chunk];
+  const parts = chunk.split(GLUED_WORD_SPLIT_REGEX).filter((s) => s.length > 0);
+  return parts.length > 0 ? parts : [chunk];
+}
+
+/**
  * Strips Hebrew vowel points (Niqqud) and cantillation marks (U+0591 to U+05C7).
  */
 export function stripHebrewVowels(str: string): string {
@@ -289,19 +307,29 @@ export function parseParagraph(rawPara: string, paraIndex = 0): ParsedParagraph 
       plainTextAcc += ' ';
     } else {
       // Normal character fragment
-      currentWordRaw += part;
-      currentWordPlain += part;
-      plainTextAcc += part;
+      // Handle words glued together without whitespace by punctuation/signs (e.g. 'Stern“—so', 'Liebe?—so')
+      const subParts = splitGluedWords(part);
+      for (let i = 0; i < subParts.length; i++) {
+        const sub = subParts[i];
+        currentWordRaw += sub;
+        currentWordPlain += sub;
+        plainTextAcc += sub;
 
-      const lastRun = currentWordRuns[currentWordRuns.length - 1];
-      if (lastRun && lastRun.color === activeColor && lastRun.hang === activeHang) {
-        lastRun.text += part;
-      } else {
-        currentWordRuns.push({
-          text: part,
-          color: activeColor,
-          hang: activeHang,
-        });
+        const lastRun = currentWordRuns[currentWordRuns.length - 1];
+        if (lastRun && lastRun.color === activeColor && lastRun.hang === activeHang) {
+          lastRun.text += sub;
+        } else {
+          currentWordRuns.push({
+            text: sub,
+            color: activeColor,
+            hang: activeHang,
+          });
+        }
+
+        // If there are subsequent sub-parts in this chunk, the current word is complete and we flush it
+        if (i < subParts.length - 1) {
+          flushWord();
+        }
       }
     }
   }

@@ -1,5 +1,50 @@
-import { LLMConfig, QueryResult, LLMProviderType, CustomProviderConfig } from '../types';
+import { 
+  LLMConfig, 
+  QueryResult, 
+  LLMProviderType, 
+  CustomProviderConfig, 
+  TranslationChatMessage,
+  LLMModelBlueprint 
+} from '../types';
 import { cleanCopiedReaderText } from '../utils/textUtils';
+import { getStoredLLMModelBlueprints, getLLMConfig } from './storageService';
+
+/**
+ * Resolves the effective LLMConfig to use for a given modelBlueprintId.
+ * If modelBlueprintId matches a stored LLMModelBlueprint, returns its configuration.
+ * Otherwise falls back to global active LLMConfig.
+ */
+export function resolveLLMConfigForBlueprint(
+  modelBlueprintId?: string,
+  fallbackConfig?: LLMConfig
+): { config: LLMConfig; modelBlueprintName?: string; modelBlueprintId?: string } {
+  const defaultFallback = fallbackConfig || getLLMConfig();
+  if (!modelBlueprintId) {
+    return { config: defaultFallback };
+  }
+
+  const storedModels = getStoredLLMModelBlueprints();
+  const matched = storedModels.find((m) => m.id === modelBlueprintId);
+  if (!matched) {
+    return { config: defaultFallback };
+  }
+
+  const resolvedConfig: LLMConfig = {
+    provider: matched.provider || defaultFallback.provider || 'built-in-gemini',
+    modelName: matched.modelName || defaultFallback.modelName || 'gemini-3.7-flash',
+    customApiKey: matched.customApiKey || defaultFallback.customApiKey,
+    customBaseUrl: matched.customBaseUrl || defaultFallback.customBaseUrl,
+    requestJsonTemplate: matched.requestJsonTemplate || defaultFallback.requestJsonTemplate,
+    customProviders: defaultFallback.customProviders,
+    activeCustomProviderId: defaultFallback.activeCustomProviderId,
+  };
+
+  return {
+    config: resolvedConfig,
+    modelBlueprintName: matched.name,
+    modelBlueprintId: matched.id,
+  };
+}
 
 /**
  * Returns the default template-based JSON request structure for a provider/model.
@@ -93,7 +138,8 @@ export async function executeLLMQueryStream(
   config: LLMConfig,
   onChunk: (accumulatedText: string) => void,
   systemInstruction?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  customRequestPayload?: any
 ): Promise<QueryResult> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return {
@@ -104,22 +150,27 @@ export async function executeLLMQueryStream(
     };
   }
 
-  const provider = config.provider || 'built-in-gemini';
+  const effectiveConfig: LLMConfig = {
+    ...config,
+    customRequestPayload: customRequestPayload !== undefined ? customRequestPayload : config.customRequestPayload,
+  };
+
+  const provider = effectiveConfig.provider || 'built-in-gemini';
 
   try {
     // Check if provider is a custom provider configured by user
-    const matchedCustomProvider = config.customProviders?.find(
-      (cp) => cp.id === provider || cp.id === config.activeCustomProviderId
+    const matchedCustomProvider = effectiveConfig.customProviders?.find(
+      (cp) => cp.id === provider || cp.id === effectiveConfig.activeCustomProviderId
     );
 
     if (matchedCustomProvider) {
       const mergedConfig: LLMConfig = {
-        ...config,
+        ...effectiveConfig,
         provider: matchedCustomProvider.name,
-        customApiKey: matchedCustomProvider.apiKey || config.customApiKey,
-        modelName: config.modelName || matchedCustomProvider.defaultModel,
+        customApiKey: matchedCustomProvider.apiKey || effectiveConfig.customApiKey,
+        modelName: effectiveConfig.modelName || matchedCustomProvider.defaultModel,
         customBaseUrl: matchedCustomProvider.baseUrl,
-        requestJsonTemplate: matchedCustomProvider.requestJsonTemplate || config.requestJsonTemplate,
+        requestJsonTemplate: matchedCustomProvider.requestJsonTemplate || effectiveConfig.requestJsonTemplate,
       };
 
       return await streamOpenAICompatible(
@@ -138,16 +189,19 @@ export async function executeLLMQueryStream(
       case 'built-in-gemini':
         return await streamBuiltInGemini(
           prompt,
-          config.modelName || 'gemini-3.7-flash',
+          effectiveConfig.modelName || 'gemini-3.7-flash',
           onChunk,
           systemInstruction,
-          signal
+          signal,
+          effectiveConfig.maxTokens,
+          effectiveConfig.temperature,
+          effectiveConfig.customRequestPayload
         );
 
       case 'custom-gemini':
         return await streamCustomGemini(
           prompt,
-          config,
+          effectiveConfig,
           onChunk,
           systemInstruction,
           signal
@@ -156,7 +210,7 @@ export async function executeLLMQueryStream(
       case 'groq':
         return await streamOpenAICompatible(
           'https://api.groq.com/openai/v1/chat/completions',
-          config,
+          effectiveConfig,
           prompt,
           onChunk,
           systemInstruction,
@@ -167,7 +221,7 @@ export async function executeLLMQueryStream(
       case 'openrouter':
         return await streamOpenAICompatible(
           'https://openrouter.ai/api/v1/chat/completions',
-          config,
+          effectiveConfig,
           prompt,
           onChunk,
           systemInstruction,
@@ -177,8 +231,8 @@ export async function executeLLMQueryStream(
 
       case 'custom-openai':
         return await streamOpenAICompatible(
-          config.customBaseUrl || 'https://api.openai.com/v1/chat/completions',
-          config,
+          effectiveConfig.customBaseUrl || 'https://api.openai.com/v1/chat/completions',
+          effectiveConfig,
           prompt,
           onChunk,
           systemInstruction,
@@ -188,10 +242,10 @@ export async function executeLLMQueryStream(
 
       default:
         // If unrecognized string, check if customBaseUrl is set, otherwise default to built-in gemini
-        if (config.customBaseUrl) {
+        if (effectiveConfig.customBaseUrl) {
           return await streamOpenAICompatible(
-            config.customBaseUrl,
-            config,
+            effectiveConfig.customBaseUrl,
+            effectiveConfig,
             prompt,
             onChunk,
             systemInstruction,
@@ -204,7 +258,10 @@ export async function executeLLMQueryStream(
           'gemini-3.7-flash',
           onChunk,
           systemInstruction,
-          signal
+          signal,
+          effectiveConfig.maxTokens,
+          effectiveConfig.temperature,
+          effectiveConfig.customRequestPayload
         );
     }
   } catch (err: any) {
@@ -261,13 +318,23 @@ async function streamBuiltInGemini(
   model: string,
   onChunk: (text: string) => void,
   systemInstruction?: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  maxOutputTokens?: number,
+  temperature?: number,
+  customRequestPayload?: any
 ): Promise<QueryResult> {
   const effectiveModel = model || 'gemini-3.7-flash';
   const response = await fetch('/api/query-stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, model: effectiveModel, systemInstruction }),
+    body: JSON.stringify({
+      prompt,
+      model: effectiveModel,
+      systemInstruction,
+      maxOutputTokens,
+      temperature,
+      customRequestPayload,
+    }),
     signal,
   });
 
@@ -322,7 +389,7 @@ async function streamBuiltInGemini(
     text: accumulatedText || 'No text output returned.',
     providerUsed: 'Built-in Gemini Server',
     modelUsed: effectiveModel,
-    rawRequestPayload: { prompt, model: effectiveModel, systemInstruction },
+    rawRequestPayload: { prompt, model: effectiveModel, systemInstruction, maxOutputTokens, temperature },
     rawResponsePayload: { accumulatedTextLength: accumulatedText.length, sampleText: accumulatedText.slice(0, 500) },
   };
 }
@@ -345,7 +412,15 @@ async function streamCustomGemini(
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${config.customApiKey}`;
 
   let requestBody: any = null;
-  if (config.requestJsonTemplate) {
+  if (config.customRequestPayload) {
+    try {
+      requestBody = typeof config.customRequestPayload === 'string'
+        ? JSON.parse(config.customRequestPayload)
+        : JSON.parse(JSON.stringify(config.customRequestPayload));
+    } catch (err) {
+      console.warn('Failed to parse customRequestPayload in streamCustomGemini:', err);
+    }
+  } else if (config.requestJsonTemplate) {
     requestBody = buildRequestPayloadFromTemplate(config.requestJsonTemplate, {
       prompt,
       model,
@@ -359,6 +434,25 @@ async function streamCustomGemini(
     };
     if (systemInstruction) {
       requestBody.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+    const genConfig: any = {};
+    if (config.maxTokens) genConfig.maxOutputTokens = config.maxTokens;
+    if (config.temperature !== undefined) genConfig.temperature = config.temperature;
+    if (Object.keys(genConfig).length > 0) {
+      requestBody.generationConfig = genConfig;
+    }
+  } else {
+    if (config.maxTokens && (!requestBody.generationConfig || !requestBody.generationConfig.maxOutputTokens)) {
+      requestBody.generationConfig = {
+        ...(requestBody.generationConfig || {}),
+        maxOutputTokens: config.maxTokens,
+      };
+    }
+    if (config.temperature !== undefined && (!requestBody.generationConfig || requestBody.generationConfig.temperature === undefined)) {
+      requestBody.generationConfig = {
+        ...(requestBody.generationConfig || {}),
+        temperature: config.temperature,
+      };
     }
   }
 
@@ -443,7 +537,15 @@ async function streamOpenAICompatible(
   }
 
   let requestBodyObj: any = null;
-  if (config.requestJsonTemplate) {
+  if (config.customRequestPayload) {
+    try {
+      requestBodyObj = typeof config.customRequestPayload === 'string'
+        ? JSON.parse(config.customRequestPayload)
+        : JSON.parse(JSON.stringify(config.customRequestPayload));
+    } catch (err) {
+      console.warn('Failed to parse customRequestPayload in streamOpenAICompatible:', err);
+    }
+  } else if (config.requestJsonTemplate) {
     requestBodyObj = buildRequestPayloadFromTemplate(config.requestJsonTemplate, {
       prompt,
       model: modelName,
@@ -461,9 +563,20 @@ async function streamOpenAICompatible(
     requestBodyObj = {
       model: modelName,
       messages,
-      temperature: 0.3,
+      temperature: config.temperature ?? 0.3,
       stream: true,
     };
+    if (config.maxTokens) {
+      requestBodyObj.max_tokens = config.maxTokens;
+    }
+  } else {
+    // If requestBodyObj is provided, ensure max_tokens is applied if set in config and not explicitly defined
+    if (config.maxTokens && requestBodyObj.max_tokens === undefined && requestBodyObj.maxOutputTokens === undefined) {
+      requestBodyObj.max_tokens = config.maxTokens;
+    }
+    if (requestBodyObj.stream === undefined) {
+      requestBodyObj.stream = true;
+    }
   }
 
   const headers: Record<string, string> = {
@@ -584,24 +697,116 @@ async function streamOpenAICompatible(
 }
 
 /**
- * Test Connection for a provider configuration
+ * Tests connection with current LLM configuration
  */
-export async function testLLMConnection(config: LLMConfig): Promise<{
-  success: boolean;
-  message: string;
-}> {
+export async function testLLMConnection(config: LLMConfig): Promise<{ success: boolean; message: string }> {
   try {
     const res = await executeLLMQuery(
-      'Respond with the single word "CONNECTED" to confirm connectivity.',
+      'Respond with a single short word: "Connected".',
       config,
-      'You are a connectivity test assistant.'
+      'You are a connection test responder.'
     );
     if (res.error) {
       return { success: false, message: res.error };
     }
-    return { success: true, message: `Connected successfully via ${res.providerUsed} (${res.modelUsed})!` };
+    return { success: true, message: `Connected successfully! Model responded: "${res.text.trim().slice(0, 50)}"` };
   } catch (err: any) {
-    return { success: false, message: err.message || 'Connection test failed.' };
+    return { success: false, message: err?.message || 'Connection failed' };
   }
+}
+
+/**
+ * Multi-turn Interactive Translation Chat Stream
+ * Allows user to converse with the LLM specifically regarding a generated translation,
+ * asking for grammatical nuances, historical context, alternative renderings, etc.
+ */
+export async function executeTranslationChatStream(
+  arg1: any,
+  arg2: any,
+  arg3: any,
+  arg4?: any,
+  arg5?: any,
+  arg6?: any
+): Promise<QueryResult> {
+  let targetText = '';
+  let translationResult = '';
+  let messages: TranslationChatMessage[] = [];
+  let config: LLMConfig = getLLMConfig();
+  let onChunk: (chunk: string) => void = () => {};
+  let systemInstruction = '';
+  let signal: AbortSignal | undefined = undefined;
+
+  // Case A: (messages, context, config, onChunk, signal)
+  if (Array.isArray(arg1)) {
+    messages = arg1;
+    if (typeof arg2 === 'object' && arg2 !== null) {
+      targetText = arg2.targetText || '';
+      translationResult = arg2.translationResult || '';
+    }
+    if (arg3 && typeof arg3 === 'object') config = arg3;
+    if (typeof arg4 === 'function') onChunk = arg4;
+    if (arg5 instanceof AbortSignal) signal = arg5;
+  }
+  // Case B: (targetText, displayedText, chatMessages, config, onChunk, signal)
+  else if (typeof arg1 === 'string' && typeof arg2 === 'string' && Array.isArray(arg3)) {
+    targetText = arg1;
+    translationResult = arg2;
+    messages = arg3;
+    if (arg4 && typeof arg4 === 'object') config = arg4;
+    if (typeof arg5 === 'function') onChunk = arg5;
+    if (arg6 instanceof AbortSignal) signal = arg6;
+  }
+  // Case C: (calqueText, userMsg, config, conversationHistory, onChunk, systemInstruction)
+  else if (typeof arg1 === 'string' && typeof arg2 === 'string' && typeof arg3 === 'object' && !Array.isArray(arg3)) {
+    translationResult = arg1;
+    const userPrompt = arg2;
+    config = arg3;
+    const prevConversation: TranslationChatMessage[] = Array.isArray(arg4) ? arg4 : [];
+    if (typeof arg5 === 'function') onChunk = arg5;
+    if (typeof arg6 === 'string') systemInstruction = arg6;
+    else if (arg6 instanceof AbortSignal) signal = arg6;
+
+    messages = [
+      ...prevConversation,
+      {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: userPrompt,
+        timestamp: new Date().toISOString(),
+      },
+    ];
+  }
+
+  const defaultSys = `You are a distinguished philologist, comparative linguist, and mystical/literary hermeneutics scholar.
+The user is studying the following text and its deciphering/translation:
+[TARGET SOURCE/CALQUE TEXT]:
+"""${targetText || translationResult}"""
+${translationResult && targetText ? `\n[TRANSLATION RESULT]:\n"""${translationResult}"""` : ''}
+
+Instructions:
+- Provide rigorous, precise, insightful, and accessible explanations.
+- If asked about morphology, roots, or separable verbs, break them down clearly.
+- If asked about symbolic, esoteric, or contextual meaning, illuminate them with historical fidelity.
+- Be concise yet thorough.`;
+
+  const effectiveSys = systemInstruction ? `${defaultSys}\n\n[ADDITIONAL INSTRUCTIONS]:\n${systemInstruction}` : defaultSys;
+
+  // Format conversation history for single prompt stream
+  let conversationPrompt = '';
+  if (messages.length === 1) {
+    conversationPrompt = messages[0].content;
+  } else {
+    conversationPrompt = messages
+      .map((m) => `${m.role === 'user' ? 'User Question' : 'Scholar Assistant'}: ${m.content}`)
+      .join('\n\n');
+  }
+
+  return executeLLMQueryStream(
+    conversationPrompt || 'Hello, I have a question about this translation.',
+    config,
+    onChunk,
+    effectiveSys,
+    signal
+  );
 }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Clipboard, BookOpen, Tag, Plus, Check } from 'lucide-react';
-import { TextItem, QueryBlueprint } from '../types';
+import { X, Sparkles, Clipboard, BookOpen, Tag, Plus, Check, Globe } from 'lucide-react';
+import { TextItem, QueryBlueprint, LanguageItem } from '../types';
+import { getStoredLanguages, saveLanguage } from '../services/storageService';
 
 interface TextEditorModalProps {
   isOpen: boolean;
@@ -8,6 +9,7 @@ interface TextEditorModalProps {
   textToEdit: TextItem | null;
   blueprints: QueryBlueprint[];
   onSave: (text: TextItem) => void;
+  languages?: LanguageItem[];
 }
 
 export const TextEditorModal: React.FC<TextEditorModalProps> = ({
@@ -16,6 +18,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
   textToEdit,
   blueprints,
   onSave,
+  languages: passedLanguages,
 }) => {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
@@ -27,8 +30,31 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
   const [tags, setTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
 
-  const wordBlueprints = blueprints.filter((b) => b.type === 'word');
-  const passageBlueprints = blueprints.filter((b) => b.type === 'passage');
+  // Custom language addition inline
+  const [languagesList, setLanguagesList] = useState<LanguageItem[]>([]);
+  const [isAddingCustomLang, setIsAddingCustomLang] = useState(false);
+  const [newLangName, setNewLangName] = useState('');
+  const [newLangCode, setNewLangCode] = useState('');
+
+  useEffect(() => {
+    if (passedLanguages && passedLanguages.length > 0) {
+      setLanguagesList(passedLanguages);
+    } else {
+      setLanguagesList(getStoredLanguages());
+    }
+  }, [passedLanguages, isOpen]);
+
+  // Blueprints applicable to chosen language
+  const applicableBlueprints = blueprints.filter(
+    (b) => !b.language || b.language === 'all' || b.language.toLowerCase() === language.toLowerCase()
+  );
+
+  const wordBlueprints = applicableBlueprints.filter((b) => b.type === 'word');
+  const passageBlueprints = applicableBlueprints.filter((b) => b.type === 'passage');
+
+  // If no language-specific word blueprints, fall back to all word blueprints
+  const displayWordBlueprints = wordBlueprints.length > 0 ? wordBlueprints : blueprints.filter((b) => b.type === 'word');
+  const displayPassageBlueprints = passageBlueprints.length > 0 ? passageBlueprints : blueprints.filter((b) => b.type === 'passage');
 
   useEffect(() => {
     if (textToEdit) {
@@ -41,9 +67,8 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
       setTags(textToEdit.tags || []);
       setNotes(textToEdit.notes || '');
     } else {
-      // Default selections
-      const defaultWordBp = wordBlueprints.find((b) => b.isDefault) || wordBlueprints[0];
-      const defaultPassageBp = passageBlueprints.find((b) => b.isDefault) || passageBlueprints[0];
+      const defaultWordBp = displayWordBlueprints.find((b) => b.isDefault) || displayWordBlueprints[0];
+      const defaultPassageBp = displayPassageBlueprints.find((b) => b.isDefault) || displayPassageBlueprints[0];
 
       setTitle('');
       setAuthor('');
@@ -80,6 +105,22 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
     setTags(tags.filter((t) => t !== tagToRemove));
   };
 
+  const handleAddNewLanguage = () => {
+    if (!newLangName.trim()) return;
+    const newLangItem: LanguageItem = {
+      id: `lang-${Date.now()}`,
+      name: newLangName.trim(),
+      code: newLangCode.trim().toLowerCase() || newLangName.trim().slice(0, 3).toLowerCase(),
+      isCustom: true,
+    };
+    const updated = saveLanguage(newLangItem);
+    setLanguagesList(updated);
+    setLanguage(newLangItem.name);
+    setNewLangName('');
+    setNewLangCode('');
+    setIsAddingCustomLang(false);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
@@ -90,8 +131,8 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
       author: author.trim() || undefined,
       language: language.trim(),
       content: content.trim(),
-      wordBlueprintId: wordBlueprintId || (wordBlueprints[0]?.id || ''),
-      passageBlueprintId: passageBlueprintId || (passageBlueprints[0]?.id || ''),
+      wordBlueprintId: wordBlueprintId || (displayWordBlueprints[0]?.id || ''),
+      passageBlueprintId: passageBlueprintId || (displayPassageBlueprints[0]?.id || ''),
       tags,
       notes: notes.trim() || undefined,
       createdAt: textToEdit ? textToEdit.createdAt : new Date().toISOString(),
@@ -127,7 +168,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-stone-800 text-stone-400 hover:text-stone-200 transition"
+            className="p-2 rounded-full hover:bg-stone-800 text-stone-400 hover:text-stone-200 transition cursor-pointer"
             id="btn-close-text-editor-modal"
           >
             <X className="w-5 h-5" />
@@ -164,23 +205,73 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
             </div>
           </div>
 
-          {/* Language selection */}
+          {/* Language selection with custom language support */}
           <div className="space-y-1">
-            <label className="text-stone-300 font-medium">Original Language</label>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 focus:outline-hidden focus:border-amber-600 text-xs"
-              id="select-text-language"
-            >
-              <option value="German">German / Biblical German</option>
-              <option value="Latin">Latin / Medieval Latin</option>
-              <option value="Greek">Ancient Greek / Koine</option>
-              <option value="Sanskrit">Sanskrit</option>
-              <option value="French">French</option>
-              <option value="Hebrew">Hebrew / Biblical Hebrew</option>
-              <option value="Other">Other Foreign Language</option>
-            </select>
+            <div className="flex items-center justify-between">
+              <label className="text-stone-300 font-medium flex items-center space-x-1.5">
+                <Globe className="w-3.5 h-3.5 text-amber-400" />
+                <span>Original Language</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddingCustomLang(!isAddingCustomLang)}
+                className="text-[11px] text-amber-400 hover:text-amber-300 transition cursor-pointer"
+              >
+                {isAddingCustomLang ? 'Cancel' : '+ Add New Language'}
+              </button>
+            </div>
+
+            {isAddingCustomLang ? (
+              <div className="p-3 rounded-xl bg-stone-950 border border-amber-800/60 space-y-2">
+                <div className="text-[11px] text-amber-300 font-medium">Define New Language:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Language Name (e.g., Aramaic)"
+                    value={newLangName}
+                    onChange={(e) => setNewLangName(e.target.value)}
+                    className="p-2 bg-stone-900 border border-stone-700 rounded-lg text-xs text-stone-100"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Code (e.g., arc)"
+                    value={newLangCode}
+                    onChange={(e) => setNewLangCode(e.target.value)}
+                    className="p-2 bg-stone-900 border border-stone-700 rounded-lg text-xs text-stone-100"
+                  />
+                </div>
+                <div className="flex justify-end space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingCustomLang(false)}
+                    className="px-2.5 py-1 rounded bg-stone-800 text-stone-400 text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddNewLanguage}
+                    disabled={!newLangName.trim()}
+                    className="px-3 py-1 rounded bg-amber-600 text-stone-950 font-semibold text-xs disabled:opacity-40"
+                  >
+                    Save & Select Language
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 focus:outline-hidden focus:border-amber-600 text-xs"
+                id="select-text-language"
+              >
+                {languagesList.map((lang) => (
+                  <option key={lang.id} value={lang.name}>
+                    {lang.name} {lang.isCustom ? '(Custom)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           {/* Text Content Field with Paste Button & Formatting Tags */}
@@ -190,7 +281,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
               <button
                 type="button"
                 onClick={handlePasteClipboard}
-                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center space-x-1"
+                className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center space-x-1 cursor-pointer"
                 id="btn-paste-clipboard"
               >
                 <Clipboard className="w-3 h-3" />
@@ -204,7 +295,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
               <button
                 type="button"
                 onClick={() => setContent((c) => c + '[Red]text[/Red]')}
-                className="px-1.5 py-0.5 rounded bg-red-950/50 hover:bg-red-900/60 border border-red-800/50 text-red-300 transition"
+                className="px-1.5 py-0.5 rounded bg-red-950/50 hover:bg-red-900/60 border border-red-800/50 text-red-300 transition cursor-pointer"
                 title="Insert [Red]...[/Red]"
               >
                 [Red]
@@ -212,7 +303,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
               <button
                 type="button"
                 onClick={() => setContent((c) => c + '[Blue]text[/Blue]')}
-                className="px-1.5 py-0.5 rounded bg-blue-950/50 hover:bg-blue-900/60 border border-blue-800/50 text-blue-300 transition"
+                className="px-1.5 py-0.5 rounded bg-blue-950/50 hover:bg-blue-900/60 border border-blue-800/50 text-blue-300 transition cursor-pointer"
                 title="Insert [Blue]...[/Blue]"
               >
                 [Blue]
@@ -220,7 +311,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
               <button
                 type="button"
                 onClick={() => setContent((c) => c + '[hang:3][Red]D[/Red][/hang]ie')}
-                className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 border border-stone-700 text-amber-300 transition font-serif"
+                className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 border border-stone-700 text-amber-300 transition font-serif cursor-pointer"
                 title="Insert Drop Cap [hang:X]...[/hang]"
               >
                 [hang:X] Drop Cap
@@ -233,7 +324,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
             <textarea
               required
               rows={8}
-              placeholder="Paste original foreign symbolic text here (Hebrew, Greek, Latin, German, etc.). Supports [Red], [Blue], and [hang:X] tags..."
+              placeholder="Paste original foreign symbolic text here (Hebrew, Greek, Latin, German, Sanskrit, etc.). Supports [Red], [Blue], and [hang:X] tags..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               dir="auto"
@@ -246,10 +337,10 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
           <div className="p-3.5 rounded-2xl bg-stone-950/80 border border-amber-900/40 space-y-3">
             <div className="flex items-center space-x-2 text-amber-300 font-serif font-medium text-xs">
               <Sparkles className="w-4 h-4 text-amber-400" />
-              <span>Associated Query Blueprints</span>
+              <span>Associated Query Blueprints (Applicable to {language})</span>
             </div>
             <p className="text-[11px] text-stone-400 leading-normal">
-              Select which query prompt blueprints to reference when tapping words or selecting passages in this text.
+              Select which query prompt blueprints to default when tapping words or selecting passages in this text.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -264,9 +355,9 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
                   className="w-full px-2.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-200 text-xs focus:border-amber-600"
                   id="select-word-blueprint"
                 >
-                  {wordBlueprints.map((bp) => (
+                  {displayWordBlueprints.map((bp) => (
                     <option key={bp.id} value={bp.id}>
-                      {bp.name} {bp.isDefault ? '(Default)' : ''}
+                      {bp.name} {bp.isDefault ? '(Default)' : ''} {bp.language && bp.language !== 'all' ? `[${bp.language}]` : ''}
                     </option>
                   ))}
                 </select>
@@ -283,9 +374,9 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
                   className="w-full px-2.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-stone-200 text-xs focus:border-amber-600"
                   id="select-passage-blueprint"
                 >
-                  {passageBlueprints.map((bp) => (
+                  {displayPassageBlueprints.map((bp) => (
                     <option key={bp.id} value={bp.id}>
-                      {bp.name} {bp.isDefault ? '(Default)' : ''}
+                      {bp.name} {bp.isDefault ? '(Default)' : ''} {bp.language && bp.language !== 'all' ? `[${bp.language}]` : ''}
                     </option>
                   ))}
                 </select>
@@ -299,7 +390,7 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
             <div className="flex items-center space-x-2">
               <input
                 type="text"
-                placeholder="Add tag (e.g., Red Book, Alchemy)..."
+                placeholder="e.g. Archetypes, Alchemy, Gnosticism"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -308,16 +399,16 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
                     handleAddTag();
                   }
                 }}
-                className="flex-1 px-3 py-1.5 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 placeholder-stone-600 text-xs"
-                id="input-add-tag"
+                className="flex-1 px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 placeholder-stone-600 focus:outline-hidden focus:border-amber-600 text-xs"
+                id="input-tag"
               />
               <button
                 type="button"
                 onClick={handleAddTag}
-                className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-medium"
+                className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700 transition cursor-pointer"
                 id="btn-add-tag"
               >
-                Add
+                <Plus className="w-4 h-4" />
               </button>
             </div>
 
@@ -326,15 +417,15 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
                 {tags.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-950/80 text-amber-300 border border-amber-800/50 text-[11px]"
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-stone-800 text-amber-200 border border-stone-700 text-[11px]"
                   >
-                    <span>#{tag}</span>
+                    <span>{tag}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveTag(tag)}
-                      className="hover:text-red-400 ml-1"
+                      className="hover:text-red-400 ml-1 cursor-pointer"
                     >
-                      ×
+                      <X className="w-3 h-3" />
                     </button>
                   </span>
                 ))}
@@ -342,36 +433,35 @@ export const TextEditorModal: React.FC<TextEditorModalProps> = ({
             )}
           </div>
 
-          {/* Notes */}
+          {/* User Notes */}
           <div className="space-y-1">
-            <label className="text-stone-300 font-medium">Personal Notes / Context</label>
-            <input
-              type="text"
-              placeholder="e.g. Chapter 1, Liber Primus, page 12..."
+            <label className="text-stone-300 font-medium">Notes / Contextual Apparatus</label>
+            <textarea
+              rows={3}
+              placeholder="Add historical provenance, manuscript folio numbers, or personal notes..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 placeholder-stone-600 text-xs"
-              id="input-text-notes"
+              className="w-full p-3 rounded-xl bg-stone-950 border border-stone-800 text-stone-100 placeholder-stone-600 focus:outline-hidden focus:border-amber-600 text-xs font-sans"
+              id="textarea-text-notes"
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-4 border-t border-stone-800 flex items-center justify-end space-x-3">
+          {/* Footer Save Button */}
+          <div className="pt-2 border-t border-stone-800 flex items-center justify-end space-x-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium"
-              id="btn-cancel-text-editor"
+              className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-medium transition cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-amber-700 hover:bg-amber-600 text-amber-50 text-xs font-medium flex items-center space-x-1.5 shadow-md"
-              id="btn-save-text-item"
+              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 font-semibold text-xs flex items-center space-x-1.5 shadow-md transition cursor-pointer"
+              id="btn-submit-save-text"
             >
               <Check className="w-4 h-4" />
-              <span>{textToEdit ? 'Save Changes' : 'Store Text'}</span>
+              <span>{textToEdit ? 'Save Changes' : 'Create Text'}</span>
             </button>
           </div>
         </form>

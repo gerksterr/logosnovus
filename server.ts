@@ -39,21 +39,42 @@ async function startServer() {
   // API Query Endpoint for Gemini (Non-streaming fallback)
   app.post("/api/query", async (req, res) => {
     try {
-      const { prompt, systemInstruction, model = "gemini-3.7-flash" } = req.body;
+      const { prompt, systemInstruction, model = "gemini-3.7-flash", maxOutputTokens, temperature, customRequestPayload } = req.body;
 
-      if (!prompt) {
+      if (!prompt && !customRequestPayload) {
         return res.status(400).json({ error: "Prompt is required." });
       }
 
       const ai = getGeminiAi();
       const validModel = model && typeof model === "string" ? model : "gemini-3.7-flash";
 
+      const geminiConfig: any = {};
+      let effectiveContents: any = prompt;
+
+      if (systemInstruction) geminiConfig.systemInstruction = systemInstruction;
+      if (maxOutputTokens) geminiConfig.maxOutputTokens = Number(maxOutputTokens);
+      if (temperature !== undefined && temperature !== null) geminiConfig.temperature = Number(temperature);
+
+      if (customRequestPayload) {
+        try {
+          const parsed = typeof customRequestPayload === 'string' ? JSON.parse(customRequestPayload) : customRequestPayload;
+          if (parsed.contents) effectiveContents = parsed.contents;
+          if (parsed.generationConfig) {
+            if (parsed.generationConfig.maxOutputTokens) geminiConfig.maxOutputTokens = Number(parsed.generationConfig.maxOutputTokens);
+            if (parsed.generationConfig.temperature !== undefined) geminiConfig.temperature = Number(parsed.generationConfig.temperature);
+          }
+          if (parsed.maxOutputTokens) geminiConfig.maxOutputTokens = Number(parsed.maxOutputTokens);
+          if (parsed.max_tokens) geminiConfig.maxOutputTokens = Number(parsed.max_tokens);
+          if (parsed.systemInstruction) geminiConfig.systemInstruction = parsed.systemInstruction;
+        } catch (parseErr) {
+          console.warn("Could not parse customRequestPayload:", parseErr);
+        }
+      }
+
       const response = await ai.models.generateContent({
         model: validModel,
-        contents: prompt,
-        config: systemInstruction
-          ? { systemInstruction }
-          : undefined,
+        contents: effectiveContents,
+        config: Object.keys(geminiConfig).length > 0 ? geminiConfig : undefined,
       });
 
       const text = response.text || "No response generated.";
@@ -69,9 +90,9 @@ async function startServer() {
   // API Streaming Query Endpoint for Gemini
   app.post("/api/query-stream", async (req, res) => {
     try {
-      const { prompt, systemInstruction, model = "gemini-3.7-flash" } = req.body;
+      const { prompt, systemInstruction, model = "gemini-3.7-flash", maxOutputTokens, temperature, customRequestPayload } = req.body;
 
-      if (!prompt) {
+      if (!prompt && !customRequestPayload) {
         return res.status(400).json({ error: "Prompt is required." });
       }
 
@@ -86,10 +107,33 @@ async function startServer() {
         (res as any).flushHeaders();
       }
 
+      const geminiConfig: any = {};
+      let effectiveContents: any = prompt;
+
+      if (systemInstruction) geminiConfig.systemInstruction = systemInstruction;
+      if (maxOutputTokens) geminiConfig.maxOutputTokens = Number(maxOutputTokens);
+      if (temperature !== undefined && temperature !== null) geminiConfig.temperature = Number(temperature);
+
+      if (customRequestPayload) {
+        try {
+          const parsed = typeof customRequestPayload === 'string' ? JSON.parse(customRequestPayload) : customRequestPayload;
+          if (parsed.contents) effectiveContents = parsed.contents;
+          if (parsed.generationConfig) {
+            if (parsed.generationConfig.maxOutputTokens) geminiConfig.maxOutputTokens = Number(parsed.generationConfig.maxOutputTokens);
+            if (parsed.generationConfig.temperature !== undefined) geminiConfig.temperature = Number(parsed.generationConfig.temperature);
+          }
+          if (parsed.maxOutputTokens) geminiConfig.maxOutputTokens = Number(parsed.maxOutputTokens);
+          if (parsed.max_tokens) geminiConfig.maxOutputTokens = Number(parsed.max_tokens);
+          if (parsed.systemInstruction) geminiConfig.systemInstruction = parsed.systemInstruction;
+        } catch (parseErr) {
+          console.warn("Could not parse customRequestPayload in stream:", parseErr);
+        }
+      }
+
       const responseStream = await ai.models.generateContentStream({
         model: validModel,
-        contents: prompt,
-        config: systemInstruction ? { systemInstruction } : undefined,
+        contents: effectiveContents,
+        config: Object.keys(geminiConfig).length > 0 ? geminiConfig : undefined,
       });
 
       for await (const chunk of responseStream) {

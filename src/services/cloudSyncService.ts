@@ -29,6 +29,7 @@ export interface CloudUserData {
   readerSettings?: ReaderSettings;
   scrollPositions?: Record<string, any>;
   lastSyncedAt?: string;
+  decipherChats?: Record<string, any>;
 }
 
 export interface SyncMeta {
@@ -86,6 +87,64 @@ function getTimestamp(dateStr?: string): number {
 }
 
 /**
+ * Splits large mirror translation payload across multiple chunk documents if necessary,
+ * guaranteeing document size remains strictly well below Firestore's 1MB limit.
+ */
+function getMirrorDocOperations(
+  userId: string,
+  mirror: MirrorTranslationData,
+  nowIso: string
+): Array<{ ref: any; data: any }> {
+  const sanitized = sanitizeForFirestore({ ...mirror, updatedAt: mirror.updatedAt || nowIso });
+  const serializedSize = JSON.stringify(sanitized).length;
+
+  // If comfortably under 700 KB, write in a single document
+  if (serializedSize < 700000 || !sanitized.paragraphs || sanitized.paragraphs.length <= 1) {
+    const mirrorRef = doc(db, 'users', userId, 'mirrors', mirror.textId);
+    return [{ ref: mirrorRef, data: sanitized }];
+  }
+
+  // Large document: chunk paragraphs across documents
+  const paragraphs = sanitized.paragraphs;
+  const chunksNeeded = Math.ceil(serializedSize / 400000);
+  const CHUNK_PARA_COUNT = Math.max(1, Math.ceil(paragraphs.length / chunksNeeded));
+  const chunks: any[][] = [];
+  for (let i = 0; i < paragraphs.length; i += CHUNK_PARA_COUNT) {
+    chunks.push(paragraphs.slice(i, i + CHUNK_PARA_COUNT));
+  }
+
+  const ops: Array<{ ref: any; data: any }> = [];
+  // Main document with all metadata and chunk pointer
+  const mainRef = doc(db, 'users', userId, 'mirrors', mirror.textId);
+  ops.push({
+    ref: mainRef,
+    data: {
+      ...sanitized,
+      paragraphs: [], // paragraphs stored in chunk docs
+      isChunked: true,
+      totalChunks: chunks.length,
+      totalParagraphs: paragraphs.length,
+      updatedAt: nowIso,
+    }
+  });
+
+  chunks.forEach((chunkParas, idx) => {
+    const chunkRef = doc(db, 'users', userId, 'mirrors', `${mirror.textId}_chunk_${idx}`);
+    ops.push({
+      ref: chunkRef,
+      data: {
+        textId: mirror.textId,
+        chunkIndex: idx,
+        paragraphs: chunkParas,
+        updatedAt: nowIso,
+      }
+    });
+  });
+
+  return ops;
+}
+
+/**
  * Smart Non-Destructive Cloud Save with Inspection & Conflict Merging:
  * 1. Reads existing cloud documents first.
  * 2. If existing cloud data is present, preserves items not present locally (e.g. from another device).
@@ -103,6 +162,7 @@ export async function saveAllToCloud(
     llmConfig: LLMConfig;
     readerSettings: ReaderSettings;
     scrollPositions: Record<string, any>;
+    decipherChats?: Record<string, any>;
   }
 ): Promise<{ 
   success: boolean; 
@@ -255,15 +315,17 @@ export async function saveAllToCloud(
     llmConfig: mergedLlmConfig,
     readerSettings: mergedReaderSettings,
     scrollPositions: mergedScrollPositions,
+    decipherChats: payload.decipherChats || existingCloud?.decipherChats || {},
     updatedAt: nowIso,
   }), { merge: true });
 
-  // Mirrors Document
+  // Mirrors Document: Overwrite legacy bloated document with a lightweight marker to immediately release the 1MB limit
   const mirrorsDocRef = doc(db, 'users', userId, 'settings', 'mirrors');
-  initialBatch.set(mirrorsDocRef, sanitizeForFirestore({
-    mirrorTranslations: mergedMirrorTranslations,
+  initialBatch.set(mirrorsDocRef, {
+    migratedToSubcollection: true,
+    totalMirrors: Object.keys(mergedMirrorTranslations).length,
     updatedAt: nowIso,
-  }), { merge: true });
+  });
 
   // Meta Document
   const metaDocRef = doc(db, 'users', userId, 'meta', 'syncInfo');
@@ -272,6 +334,7 @@ export async function saveAllToCloud(
     totalTexts: mergedTexts.length,
     totalAnnotations: mergedAnnotations.length,
     totalBlueprints: mergedBlueprints.length,
+    totalMirrors: Object.keys(mergedMirrorTranslations).length,
     lastClientDevice: getDeviceType(),
     updatedAt: serverTimestamp(),
   }), { merge: true });
@@ -299,6 +362,17 @@ export async function saveAllToCloud(
     writeOps.push({ ref: annRef, data: sanitizeForFirestore({ ...ann, syncedAt: nowIso }) });
   }
 
+  // Mirror Translations in subcollection (chunked if large, well under 1MB each)
+  for (const textId of Object.keys(mergedMirrorTranslations)) {
+    const mirror = mergedMirrorTranslations[textId];
+    if (mirror && mirror.textId) {
+      const mirrorOps = getMirrorDocOperations(userId, mirror, nowIso);
+      for (const op of mirrorOps) {
+        writeOps.push(op);
+      }
+    }
+  }
+
   // Commit all queued items in parallel chunks of 400
   const BATCH_CHUNK_SIZE = 400;
   const chunkPromises: Promise<void>[] = [];
@@ -307,7 +381,7 @@ export async function saveAllToCloud(
     const chunk = writeOps.slice(i, i + BATCH_CHUNK_SIZE);
     const chunkBatch = writeBatch(db);
     for (const op of chunk) {
-      chunkBatch.set(op.ref, op.data, { merge: true });
+      chunkBatch.set(op.ref, op.data);
     }
     chunkPromises.push(chunkBatch.commit());
   }
@@ -361,24 +435,73 @@ export async function loadAllFromCloud(userId: string): Promise<CloudUserData | 
   // 3. Fetch Blueprints
   const bpCollRef = collection(db, 'users', userId, 'blueprints');
   const bpSnap = await getDocs(bpCollRef);
-  const blueprints: QueryBlueprint[] = bpSnap.docs.map((d) => d.data() as QueryBlueprint);
+  const blueprints: QueryBlueprint[] = bpSnap.docs.map((d) => {
+    const data = d.data() as QueryBlueprint;
+    if (!data.modelBlueprintId) {
+      delete (data as any).modelBlueprintId;
+    }
+    return data;
+  });
 
   // 4. Fetch Annotations
   const annCollRef = collection(db, 'users', userId, 'annotations');
   const annSnap = await getDocs(annCollRef);
   const annotations: Annotation[] = annSnap.docs.map((d) => d.data() as Annotation);
 
-  // 5. Fetch Mirrors
-  const mirrorsDocRef = doc(db, 'users', userId, 'settings', 'mirrors');
-  const mirrorsSnap = await getDoc(mirrorsDocRef);
-  const mirrorsData = mirrorsSnap.exists() ? mirrorsSnap.data() : null;
+  // 5. Fetch Mirrors from subcollection
+  const mirrorsCollRef = collection(db, 'users', userId, 'mirrors');
+  const mirrorsSnap = await getDocs(mirrorsCollRef);
+  const mirrorMap: Record<string, MirrorTranslationData> = {};
+  const chunkDocs = new Map<string, Array<{ chunkIndex: number; paragraphs: any[] }>>();
+
+  for (const docSnap of mirrorsSnap.docs) {
+    const d = docSnap.data();
+    if (docSnap.id.includes('_chunk_')) {
+      const parentId = d.textId;
+      if (parentId) {
+        if (!chunkDocs.has(parentId)) chunkDocs.set(parentId, []);
+        chunkDocs.get(parentId)!.push({ chunkIndex: d.chunkIndex, paragraphs: d.paragraphs || [] });
+      }
+    } else {
+      mirrorMap[docSnap.id] = d as MirrorTranslationData;
+    }
+  }
+
+  // Reassemble any chunked mirrors
+  for (const [parentId, chunks] of chunkDocs.entries()) {
+    if (mirrorMap[parentId] && (mirrorMap[parentId] as any).isChunked) {
+      chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+      mirrorMap[parentId].paragraphs = chunks.flatMap((c) => c.paragraphs);
+      delete (mirrorMap[parentId] as any).isChunked;
+      delete (mirrorMap[parentId] as any).totalChunks;
+      delete (mirrorMap[parentId] as any).totalParagraphs;
+    }
+  }
+
+  // Backward compatibility: If mirrors subcollection is empty or missing texts, check legacy settings/mirrors
+  const legacyMirrorsDocRef = doc(db, 'users', userId, 'settings', 'mirrors');
+  try {
+    const legacySnap = await getDoc(legacyMirrorsDocRef);
+    if (legacySnap.exists()) {
+      const legData = legacySnap.data();
+      if (legData && legData.mirrorTranslations && typeof legData.mirrorTranslations === 'object') {
+        for (const [k, v] of Object.entries(legData.mirrorTranslations)) {
+          if (!mirrorMap[k] && v) {
+            mirrorMap[k] = v as MirrorTranslationData;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Legacy mirrors read error (safe to ignore):', err);
+  }
 
   // 6. Fetch Meta
   const metaDocRef = doc(db, 'users', userId, 'meta', 'syncInfo');
   const metaSnap = await getDoc(metaDocRef);
   const metaData = metaSnap.exists() ? metaSnap.data() : null;
 
-  if (!settingsData && texts.length === 0 && blueprints.length === 0) {
+  if (!settingsData && texts.length === 0 && blueprints.length === 0 && Object.keys(mirrorMap).length === 0) {
     return null; // Empty cloud account
   }
 
@@ -386,10 +509,11 @@ export async function loadAllFromCloud(userId: string): Promise<CloudUserData | 
     texts,
     blueprints,
     annotations,
-    mirrorTranslations: mirrorsData?.mirrorTranslations || {},
+    mirrorTranslations: mirrorMap,
     llmConfig: settingsData?.llmConfig,
     readerSettings: settingsData?.readerSettings,
     scrollPositions: settingsData?.scrollPositions || {},
+    decipherChats: settingsData?.decipherChats || {},
     lastSyncedAt: metaData?.lastSyncedAt || new Date().toISOString(),
   };
 }
@@ -425,8 +549,8 @@ export async function syncBlueprintToCloud(userId: string, blueprint: QueryBluep
   if (!userId) return;
   try {
     const bpRef = doc(db, 'users', userId, 'blueprints', blueprint.id);
-    const sanitized = sanitizeForFirestore({ ...blueprint, updatedAt: new Date().toISOString() });
-    await setDoc(bpRef, sanitized, { merge: true });
+    const sanitized = sanitizeForFirestore({ ...blueprint, updatedAt: blueprint.updatedAt || new Date().toISOString() });
+    await setDoc(bpRef, sanitized);
   } catch (err) {
     console.error('Error syncing blueprint to cloud:', err);
   }
@@ -492,15 +616,18 @@ export async function syncMirrorTranslationToCloud(
   const nowIso = new Date().toISOString();
   try {
     const batch = writeBatch(db);
-    const mirrorsDocRef = doc(db, 'users', userId, 'settings', 'mirrors');
-    const sanitized = sanitizeForFirestore({ ...mirrorData, updatedAt: nowIso });
-    
-    batch.set(mirrorsDocRef, {
-      mirrorTranslations: {
-        [mirrorData.textId]: sanitized,
-      },
+    const ops = getMirrorDocOperations(userId, mirrorData, nowIso);
+    for (const op of ops) {
+      batch.set(op.ref, op.data);
+    }
+
+    // Keep legacy mirrors document lightweight and tiny
+    const legacyMirrorsRef = doc(db, 'users', userId, 'settings', 'mirrors');
+    batch.set(legacyMirrorsRef, {
+      migratedToSubcollection: true,
+      lastUpdatedTextId: mirrorData.textId,
       updatedAt: nowIso,
-    }, { merge: true });
+    });
 
     // Also update meta syncInfo timestamp
     const metaDocRef = doc(db, 'users', userId, 'meta', 'syncInfo');
@@ -524,17 +651,17 @@ export async function deleteMirrorTranslationFromCloud(
 ): Promise<void> {
   if (!userId || !textId) return;
   try {
-    const mirrorsDocRef = doc(db, 'users', userId, 'settings', 'mirrors');
-    const snap = await getDoc(mirrorsDocRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      const translations = { ...(data.mirrorTranslations || {}) };
-      delete translations[textId];
-      await setDoc(mirrorsDocRef, {
-        mirrorTranslations: sanitizeForFirestore(translations),
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+    const batch = writeBatch(db);
+    const mirrorRef = doc(db, 'users', userId, 'mirrors', textId);
+    batch.delete(mirrorRef);
+
+    // Delete potential chunk docs (up to 20 chunks)
+    for (let i = 0; i < 20; i++) {
+      const chunkRef = doc(db, 'users', userId, 'mirrors', `${textId}_chunk_${i}`);
+      batch.delete(chunkRef);
     }
+
+    await batch.commit();
   } catch (err) {
     console.error('Error deleting mirror translation from cloud:', err);
   }

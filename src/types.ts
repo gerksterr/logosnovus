@@ -1,5 +1,55 @@
 export type BlueprintType = 'word' | 'passage';
 
+export interface LanguageItem {
+  id: string; // e.g. "german", "hebrew", "latin", "ancient-greek", or "custom-xyz"
+  name: string; // "German", "Hebrew", "Ancient Greek", "Latin", etc.
+  code?: string; // "de", "he", "grc", "la", "sa", etc.
+  isRTL?: boolean; // true for Hebrew, Arabic, Aramaic, etc.
+  description?: string;
+  isCustom?: boolean;
+  createdAt?: string;
+}
+
+export interface LanguageWordGloss {
+  orig: string; // The original word token or clean form
+  cleanOrig: string; // Normalized lowercase clean word without punctuation
+  trans: string; // Translated word or gloss
+  keepOrig?: boolean; // When true, keep original untranslated in mirror view
+  compoundMeaning?: string; // Compound or idiomatic meaning if composite
+  notes?: string;
+  language: string; // Language name or id, e.g. "German"
+  updatedAt: string;
+}
+
+export interface LLMModelBlueprint {
+  id: string;
+  name: string; // e.g., "Gemini 3.7 Flash (Default)", "Llama 3.3 70B Versatile"
+  description?: string;
+  provider: LLMProviderType;
+  modelName: string;
+  customApiKey?: string;
+  customBaseUrl?: string;
+  requestJsonTemplate?: string;
+  systemInstruction?: string;
+  temperature?: number;
+  customHeaders?: Record<string, string>;
+  activeCustomProviderId?: string;
+  webSiteUrl?: string; // Target URL for web-assist provider (e.g. https://claude.ai/new)
+  webSiteName?: string; // Display name of the web AI site (e.g. Claude.ai)
+  isDefault?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebAssistSite {
+  id: string;
+  name: string; // "Claude.ai", "Google AI Studio", "ChatGPT", etc.
+  url: string; // "https://claude.ai/new", "https://aistudio.google.com/prompts/new_chat", "https://chatgpt.com/"
+  badgeColor?: string; // e.g. "purple", "blue", "emerald", "cyan", "amber"
+  description?: string;
+  isCustom?: boolean;
+}
+
 export interface QueryBlueprint {
   id: string;
   name: string;
@@ -7,6 +57,8 @@ export interface QueryBlueprint {
   template: string; // Must contain {word} for word, {text} for passage
   description?: string;
   isDefault?: boolean;
+  language?: string; // Applicable language, e.g. "all", "German", "Hebrew", or custom language name
+  modelBlueprintId?: string; // Reference to a named LLMModelBlueprint
   createdAt: string;
   updatedAt: string;
 }
@@ -26,17 +78,32 @@ export interface TextItem {
   updatedAt: string;
 }
 
+export interface TranslationChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: string;
+  createdAt?: string;
+  modelUsed?: string;
+  providerUsed?: string;
+}
+
 export interface Annotation {
   id: string;
   textId: string;
   type: BlueprintType;
   target: string; // The word tapped or passage selected
+  blueprintId?: string;
   blueprintName: string;
+  modelBlueprintId?: string;
+  modelBlueprintName?: string;
   queryUsed: string;
   result: string;
   createdAt: string; // ISO date timestamp
-  modelUsed?: string; // Serving model (e.g., 'gemini-3.6-flash', 'llama-3.3-70b-versatile')
+  modelUsed?: string; // Serving model (e.g., 'gemini-3.7-flash', 'llama-3.3-70b-versatile')
   providerUsed?: string; // Provider (e.g., 'built-in-gemini', 'openrouter', 'groq')
+  language?: string;
+  conversation?: TranslationChatMessage[];
 }
 
 export type LLMProviderType = 
@@ -45,6 +112,7 @@ export type LLMProviderType =
   | 'groq'
   | 'openrouter'
   | 'custom-openai'
+  | 'web-assist'
   | string;
 
 export interface CustomProviderConfig {
@@ -66,6 +134,11 @@ export interface LLMConfig {
   requestJsonTemplate?: string;
   customProviders?: CustomProviderConfig[];
   activeCustomProviderId?: string;
+  maxTokens?: number;
+  temperature?: number;
+  customRequestPayload?: any;
+  webSiteUrl?: string; // Target URL for web-assist provider (e.g. https://claude.ai/new)
+  webSiteName?: string; // Display name of the web AI site (e.g. Claude.ai)
 }
 
 export type ReaderTheme = 'parchment' | 'obsidian' | 'sepia' | 'emerald' | 'mystic';
@@ -91,7 +164,9 @@ export interface MirrorCompositePartner {
 }
 
 export interface MirrorCompositeLink {
-  id: string; // Group ID, e.g. "1", "2", "auszeichnen"
+  id: string; // Group ID, e.g. "s0_1", "s1_1", or "auszeichnen"
+  rawTagId?: string; // Original notation tag written in brackets, e.g. "1", "2"
+  sentenceIndex?: number; // 0-based sentence index within paragraph
   groupIndex?: number; // Numeric 1, 2, 3 for color-coding and badges
   partIndex: number; // 0 for head/first part, 1 for particle/second part, etc.
   totalParts: number; // Total parts in group (e.g. 2)
@@ -126,10 +201,50 @@ export interface MirrorTranslationData {
   paragraphs: MirrorTranslationParagraph[];
   rawCalqueText?: string;
   sourceModel?: string;
+  blueprintId?: string;
+  blueprintName?: string;
+  modelBlueprintId?: string;
+  modelBlueprintName?: string;
   updatedAt: string;
   untranslatedWords?: string[]; // Lowercase list of words marked to always stay untranslated in mirror mode
   passageReplacements?: MirrorPassageReplacement[]; // Custom multi-word passage translation overrides
   compositeDisplayMode?: 'separated' | 'compound'; // Global preference for composite word display in mirror mode
+  historyEntryId?: string; // ID of active history entry if linked
+  conversation?: TranslationChatMessage[];
+}
+
+export interface CalqueHistoryEntry {
+  id: string;
+  textId: string;
+  title?: string;
+  createdAt: string;
+  source: 'ai-generation' | 'manual-import' | 'manual-edit' | 'sample-default' | 'manual-snapshot' | 'web-assist';
+  modelUsed?: string;
+  rawCalqueText: string;
+  blueprintId?: string;
+  blueprintName?: string;
+  modelBlueprintId?: string;
+  modelBlueprintName?: string;
+  promptUsed?: string;
+  systemInstruction?: string;
+  notes?: string;
+  compositeCount?: number;
+  wordCount?: number;
+  mirrorData?: MirrorTranslationData;
+  conversation?: TranslationChatMessage[];
+}
+
+export interface CalquePromptTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  prompt: string;
+  systemInstruction?: string;
+  createdAt: string;
+  isDefault?: boolean;
+  isCustom?: boolean;
+  language?: string; // Applicable language, e.g. "all", "German", "Hebrew"
+  modelBlueprintId?: string; // Reference to a named LLMModelBlueprint
 }
 
 export interface ReaderSettings {

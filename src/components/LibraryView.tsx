@@ -16,10 +16,13 @@ import {
   LayoutGrid,
   List,
   Check,
-  ArrowUpDown
+  ArrowUpDown,
+  MessageSquare
 } from 'lucide-react';
 import { TextItem, QueryBlueprint } from '../types';
-import { exportAppData, importAppData, getStoredAnnotations } from '../services/storageService';
+import { exportAppData, importAppData, getStoredAnnotations, getAllStoredDecipherChats } from '../services/storageService';
+// [MIGRATION-V1-TO-V2: MARKED FOR DELETION IN FUTURE VERSIONS]
+import { runAutoLegacyChatMigration } from '../services/legacyChatMigrationService';
 import { SAMPLE_TEXTS } from '../data/seedData';
 import { FormattedTextPreview } from './FormattedTextPreview';
 
@@ -168,6 +171,23 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportChatsOnly = () => {
+    const chats = getAllStoredDecipherChats();
+    const count = Object.keys(chats).length;
+    if (count === 0) {
+      alert('No translation chats found in browser storage.');
+      return;
+    }
+    const jsonStr = JSON.stringify(chats, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `symbolic-translation-chats-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -178,6 +198,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       if (content) {
         const res = importAppData(content);
         if (res.success) {
+          // [MIGRATION-V1-TO-V2: MARKED FOR DELETION IN FUTURE VERSIONS]
+          // If imported data contains single-translation chats, automatically migrate them!
+          runAutoLegacyChatMigration();
           alert(res.message);
           onRefreshData();
         } else {
@@ -348,11 +371,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           <button
             onClick={handleExportData}
             className="hover:text-amber-300 flex items-center space-x-1 cursor-pointer"
-            title="Export JSON backup"
+            title="Export full JSON backup"
             id="btn-export-data"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export JSON</span>
+          </button>
+          <button
+            onClick={handleExportChatsOnly}
+            className="hover:text-amber-300 flex items-center space-x-1 cursor-pointer"
+            title="Export all translation chats as standalone JSON"
+            id="btn-export-chats"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Export Chats</span>
           </button>
           <label 
             className="hover:text-amber-300 flex items-center space-x-1 cursor-pointer"

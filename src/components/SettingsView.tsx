@@ -22,8 +22,9 @@ import {
   Check
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { LLMConfig, LLMProviderType, ReaderSettings, CustomProviderConfig } from '../types';
+import { LLMConfig, LLMProviderType, ReaderSettings, CustomProviderConfig, LLMModelBlueprint } from '../types';
 import { testLLMConnection, getDefaultRequestJsonTemplate } from '../services/llmService';
+import { getStoredModelPresets, addStoredModelPreset } from '../services/storageService';
 
 interface SettingsViewProps {
   llmConfig: LLMConfig;
@@ -34,6 +35,10 @@ interface SettingsViewProps {
   currentUser?: User | null;
   onOpenCloudSyncModal?: () => void;
   isCloudSynced?: boolean;
+  llmModelBlueprints?: LLMModelBlueprint[];
+  onSelectModelBlueprint?: (model: LLMModelBlueprint) => void;
+  onNavigateToTab?: (tab: any) => void;
+  onRefreshLLMModels?: () => void;
 }
 
 const PROVIDER_PRESETS: { name: string; baseUrl: string; defaultModel: string; note: string }[] = [
@@ -90,6 +95,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   currentUser,
   onOpenCloudSyncModal,
   isCloudSynced = false,
+  llmModelBlueprints = [],
+  onSelectModelBlueprint,
+  onNavigateToTab,
+  onRefreshLLMModels,
 }) => {
   const [provider, setProvider] = useState<LLMProviderType>(llmConfig.provider || 'built-in-gemini');
   const [modelName, setModelName] = useState(llmConfig.modelName || 'gemini-3.7-flash');
@@ -101,6 +110,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [customProviders, setCustomProviders] = useState<CustomProviderConfig[]>(
     llmConfig.customProviders || []
   );
+  const [storedModelPresets, setStoredModelPresets] = useState<string[]>(() => getStoredModelPresets());
+  const [maxTokens, setMaxTokens] = useState<number | undefined>(llmConfig.maxTokens);
 
   // New/Edit Provider Modal or Drawer Form State
   const [isAddingCustomProvider, setIsAddingCustomProvider] = useState(false);
@@ -171,6 +182,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSaveLLM = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (modelName.trim()) {
+      const updatedPresets = addStoredModelPreset(modelName.trim());
+      setStoredModelPresets(updatedPresets);
+    }
     const updated: LLMConfig = {
       provider,
       modelName,
@@ -179,6 +194,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       requestJsonTemplate: requestJsonTemplate.trim() || undefined,
       customProviders,
       activeCustomProviderId: customProviders.some((cp) => cp.id === provider) ? provider : undefined,
+      maxTokens: maxTokens && maxTokens > 0 ? maxTokens : undefined,
     };
     onSaveLLMConfig(updated);
     setSaveBanner(true);
@@ -194,6 +210,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       requestJsonTemplate: requestJsonTemplate.trim() || undefined,
       customProviders,
       activeCustomProviderId: customProviders.some((cp) => cp.id === provider) ? provider : undefined,
+      maxTokens: maxTokens && maxTokens > 0 ? maxTokens : undefined,
     };
 
     setIsTesting(true);
@@ -376,17 +393,122 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* Provider Selector Cards */}
+      {/* Active Default LLM Model Blueprint Section */}
+      <div className="p-5 rounded-3xl bg-stone-900 border border-stone-800 shadow-md space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800/80 pb-3">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-2xl bg-cyan-950/80 text-cyan-400 border border-cyan-800/60">
+              <Cpu className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-stone-100 flex items-center space-x-2">
+                <span>Active LLM Model Blueprint</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 font-sans font-medium">
+                  Default System Model
+                </span>
+              </h3>
+              <p className="text-xs text-stone-400">
+                Decoupled LLM blueprints specify model serving paths, temperatures, and endpoints used across reader queries and calque translations.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('blueprints')}
+              className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-cyan-300 hover:text-cyan-200 text-xs font-semibold flex items-center space-x-1.5 border border-stone-700 transition shrink-0 cursor-pointer"
+              id="btn-settings-manage-blueprints"
+            >
+              <span>Manage / Edit Blueprints</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Blueprint Selection Grid */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-cyan-200 uppercase tracking-wider flex items-center justify-between">
+            <span>Select System Default Blueprint</span>
+            <span className="text-[10px] text-stone-500 font-normal font-mono">
+              {llmModelBlueprints.length} configured
+            </span>
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {llmModelBlueprints.map((bp) => {
+              const isDefault = bp.isDefault || (
+                llmConfig.modelName === bp.modelName && llmConfig.provider === bp.provider
+              );
+
+              return (
+                <div
+                  key={bp.id}
+                  onClick={() => {
+                    if (onSelectModelBlueprint) {
+                      onSelectModelBlueprint(bp);
+                    }
+                    setProvider(bp.provider);
+                    setModelName(bp.modelName);
+                    if (bp.customBaseUrl) setCustomBaseUrl(bp.customBaseUrl);
+                    if (bp.customApiKey) setCustomApiKey(bp.customApiKey);
+                  }}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition flex flex-col justify-between space-y-2 ${
+                    isDefault
+                      ? 'bg-cyan-950/70 border-cyan-600 ring-2 ring-cyan-500/40'
+                      : 'bg-stone-950 border-stone-800 hover:border-stone-700'
+                  }`}
+                  id={`settings-model-card-${bp.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-[9px] uppercase font-semibold tracking-wider px-2 py-0.5 rounded-full bg-stone-900 text-cyan-300 border border-stone-700 font-mono">
+                          {bp.provider}
+                        </span>
+                        {isDefault && (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-cyan-900 text-cyan-100 border border-cyan-600">
+                            Active Default
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-xs font-semibold text-stone-100 mt-1 truncate">
+                        {bp.name}
+                      </h4>
+                    </div>
+
+                    {isDefault && (
+                      <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                    )}
+                  </div>
+
+                  <div className="text-[11px] font-mono text-stone-400 truncate bg-stone-900/80 px-2 py-1 rounded-lg border border-stone-800/80 flex items-center justify-between">
+                    <span className="truncate text-cyan-200">{bp.modelName}</span>
+                    <span className="text-stone-500 shrink-0 ml-2">t={bp.temperature ?? 0.3}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Provider Credentials & Custom Endpoints */}
       <form onSubmit={handleSaveLLM} className="space-y-5">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-amber-200 uppercase tracking-wider">
-              Select LLM Provider
-            </label>
+            <div>
+              <label className="text-xs font-semibold text-amber-200 uppercase tracking-wider block">
+                Provider Credentials & Custom Server Endpoints
+              </label>
+              <p className="text-[11px] text-stone-400 mt-0.5">
+                Configure API keys and self-hosted inference servers (Ollama, LM Studio, vLLM, DeepSeek) used by your blueprints.
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => handleOpenAddCustomProvider()}
-              className="text-xs bg-amber-900/60 hover:bg-amber-800/80 text-amber-200 border border-amber-700/70 px-2.5 py-1 rounded-xl flex items-center space-x-1.5 transition font-medium shadow-xs"
+              className="text-xs bg-amber-900/60 hover:bg-amber-800/80 text-amber-200 border border-amber-700/70 px-2.5 py-1 rounded-xl flex items-center space-x-1.5 transition font-medium shadow-xs shrink-0"
               id="btn-add-new-provider"
             >
               <Plus className="w-3.5 h-3.5 text-amber-300" />
@@ -612,187 +734,132 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-[10px] text-stone-400">Type any custom model ID or choose preset</span>
             </div>
 
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder={
-                  provider === 'built-in-gemini' || provider === 'custom-gemini'
-                    ? 'e.g. gemini-3.7-flash or gemini-3.1-pro-preview'
-                    : provider === 'openrouter'
-                    ? 'e.g. deepseek/deepseek-r1 or meta-llama/llama-3.3-70b-instruct'
-                    : provider === 'groq'
-                    ? 'e.g. llama-3.3-70b-versatile or mixtral-8x7b-32768'
-                    : 'e.g. gpt-4o-mini, llama3.3, or deepseek-chat'
-                }
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-amber-200 text-xs font-mono focus:outline-hidden focus:border-amber-600"
-                id="input-model-name-custom"
-              />
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    list="model-presets-list"
+                    placeholder={
+                      provider === 'built-in-gemini' || provider === 'custom-gemini'
+                        ? 'e.g. gemini-3.7-flash or gemini-3.1-pro-preview'
+                        : provider === 'openrouter'
+                        ? 'e.g. deepseek/deepseek-r1 or meta-llama/llama-3.3-70b-instruct'
+                        : provider === 'groq'
+                        ? 'e.g. llama-3.3-70b-versatile or mixtral-8x7b-32768'
+                        : 'e.g. gpt-4o-mini, llama3.3, or deepseek-chat'
+                    }
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    onBlur={() => {
+                      if (modelName.trim()) {
+                        const updated = addStoredModelPreset(modelName.trim());
+                        setStoredModelPresets(updated);
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-amber-200 text-xs font-mono focus:outline-hidden focus:border-amber-600"
+                    id="input-model-name-custom"
+                  />
+                  <datalist id="model-presets-list">
+                    {storedModelPresets.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </div>
 
-              {/* Quick Model Presets Chips */}
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="text-stone-500 font-sans">Presets:</span>
+                {/* Space-Efficient Compact Presets Dropdown */}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setModelName(e.target.value);
+                      const updated = addStoredModelPreset(e.target.value);
+                      setStoredModelPresets(updated);
+                    }
+                  }}
+                  className="px-2.5 py-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-300 text-xs font-mono hover:border-amber-600/70 focus:outline-hidden cursor-pointer shrink-0 max-w-[170px]"
+                  title="Choose from remembered entries and presets"
+                >
+                  <option value="" disabled>Presets ({storedModelPresets.length}) ▾</option>
+                  <optgroup label="Recent & Saved Entries">
+                    {storedModelPresets.map((p) => (
+                      <option key={`saved-${p}`} value={p}>{p}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
 
-                {/* Built-in Gemini Presets */}
-                {provider === 'built-in-gemini' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-3.7-flash')}
-                      className="px-2 py-0.5 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-200 font-mono font-medium"
-                    >
-                      gemini-3.7-flash (Default)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-3.1-pro-preview')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-3.1-pro-preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-2.5-flash')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-2.5-flash
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-2.5-pro')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-2.5-pro
-                    </button>
-                  </>
+              {/* Single Compact Recent Line - Takes minimal UI space */}
+              <div className="flex items-center gap-1.5 text-[11px] overflow-x-auto py-0.5 no-scrollbar">
+                <span className="text-stone-500 text-[10px] shrink-0 font-sans">Recent:</span>
+                {storedModelPresets.slice(0, 4).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      setModelName(p);
+                      const updated = addStoredModelPreset(p);
+                      setStoredModelPresets(updated);
+                    }}
+                    className={`px-2 py-0.5 rounded-md border text-[10px] font-mono whitespace-nowrap transition shrink-0 ${
+                      modelName === p
+                        ? 'bg-amber-950 text-amber-200 border-amber-700'
+                        : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-stone-200'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+                {storedModelPresets.length > 4 && (
+                  <span className="text-[10px] text-stone-600 font-mono">
+                    +{storedModelPresets.length - 4} more
+                  </span>
                 )}
+              </div>
 
-                {/* Custom Gemini Presets */}
-                {provider === 'custom-gemini' && (
-                  <>
+              {/* Max Response Tokens to prevent 2^16 fund reservation errors */}
+              <div className="pt-2 border-t border-stone-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-medium text-stone-300">Max Reply Tokens (max_tokens)</label>
+                  <p className="text-[10px] text-stone-400">Limits token generation to avoid 2¹⁶ (65,536) fund reserve errors</p>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <input
+                    type="number"
+                    placeholder="e.g. 4096"
+                    value={maxTokens ?? ''}
+                    onChange={(e) => setMaxTokens(e.target.value ? parseInt(e.target.value) : undefined)}
+                    className="w-24 px-2 py-1 rounded-lg bg-stone-950 border border-stone-800 text-amber-200 text-xs font-mono focus:outline-hidden focus:border-amber-600"
+                  />
+                  <div className="flex items-center space-x-1">
+                    {[2048, 4096, 8192, 16384].map((tokens) => (
+                      <button
+                        key={tokens}
+                        type="button"
+                        onClick={() => setMaxTokens(tokens)}
+                        className={`px-1.5 py-0.5 rounded-md border text-[10px] font-mono transition ${
+                          maxTokens === tokens
+                            ? 'bg-amber-950 text-amber-200 border-amber-700'
+                            : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-stone-200'
+                        }`}
+                      >
+                        {tokens >= 1024 ? `${tokens / 1024}k` : tokens}
+                      </button>
+                    ))}
                     <button
                       type="button"
-                      onClick={() => setModelName('gemini-3.7-flash')}
-                      className="px-2 py-0.5 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-200 font-mono font-medium"
+                      onClick={() => setMaxTokens(undefined)}
+                      className={`px-1.5 py-0.5 rounded-md border text-[10px] font-mono transition ${
+                        maxTokens === undefined
+                          ? 'bg-amber-950 text-amber-200 border-amber-700'
+                          : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-stone-200'
+                      }`}
+                      title="No token limit cap (provider default)"
                     >
-                      gemini-3.7-flash (Default)
+                      Default
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-3.1-pro-preview')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-3.1-pro-preview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-2.5-flash')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-2.5-flash
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemini-2.5-pro')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-2.5-pro
-                    </button>
-                  </>
-                )}
-
-                {provider === 'openrouter' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('deepseek/deepseek-r1')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      deepseek/deepseek-r1
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('meta-llama/llama-3.3-70b-instruct')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      llama-3.3-70b
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('google/gemini-2.5-flash')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemini-2.5-flash
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('anthropic/claude-3.5-sonnet')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      claude-3.5-sonnet
-                    </button>
-                  </>
-                )}
-
-                {provider === 'groq' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('llama-3.3-70b-versatile')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      llama-3.3-70b-versatile
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('mixtral-8x7b-32768')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      mixtral-8x7b-32768
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gemma2-9b-it')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gemma2-9b-it
-                    </button>
-                  </>
-                )}
-
-                {(provider === 'custom-openai' || provider.startsWith('custom-prov-')) && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('gpt-4o-mini')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      gpt-4o-mini
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('llama3.3')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      llama3.3 (Local)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('deepseek-chat')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      deepseek-chat
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setModelName('mistral-large-latest')}
-                      className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 font-mono"
-                    >
-                      mistral-large
-                    </button>
-                  </>
-                )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

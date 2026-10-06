@@ -15,7 +15,8 @@ import {
   Check
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { ReaderSettings } from '../types';
+import { ReaderSettings, LLMConfig, LLMModelBlueprint } from '../types';
+import { ModelBlueprintSwitcher } from './ModelBlueprintSwitcher';
 
 interface TopBarProps {
   activeTab: 'library' | 'reader' | 'playground' | 'blueprints' | 'settings';
@@ -29,6 +30,9 @@ interface TopBarProps {
   onOpenCloudSyncModal: () => void;
   isCloudSyncing?: boolean;
   lastSyncedTimestamp?: string | null;
+  llmConfig?: LLMConfig;
+  llmModelBlueprints?: LLMModelBlueprint[];
+  onSelectModelBlueprint?: (model: LLMModelBlueprint) => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -43,6 +47,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenCloudSyncModal,
   isCloudSyncing = false,
   lastSyncedTimestamp,
+  llmConfig,
+  llmModelBlueprints = [],
+  onSelectModelBlueprint,
 }) => {
   const [isOffline, setIsOffline] = useState<boolean>(
     typeof navigator !== 'undefined' ? !navigator.onLine : false
@@ -176,8 +183,18 @@ export const TopBar: React.FC<TopBarProps> = ({
           })}
         </nav>
 
-        {/* Right Section: Cloud Sync & Action Controls */}
+        {/* Right Section: Active Model Blueprint, Cloud Sync & Action Controls */}
         <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+          {/* Active LLM Model Blueprint Quick Switcher */}
+          {llmModelBlueprints && llmModelBlueprints.length > 0 && onSelectModelBlueprint && (
+            <ModelBlueprintSwitcher
+              llmModelBlueprints={llmModelBlueprints}
+              currentConfig={llmConfig}
+              onSelectModelBlueprint={onSelectModelBlueprint}
+              variant="topbar"
+            />
+          )}
+
           {/* Google Cloud Sync Button */}
           <button
             onClick={onOpenCloudSyncModal}

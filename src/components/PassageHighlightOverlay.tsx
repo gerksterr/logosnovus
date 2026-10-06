@@ -57,7 +57,23 @@ export const PassageHighlightOverlay: React.FC<PassageHighlightOverlayProps> = (
       const el = container.querySelector(`[data-passage-key="${p.key}"]`) as HTMLElement | null;
       if (!el) return;
 
-      const rawRects = Array.from(el.getClientRects());
+      // In interlinear mode, each word has a top gloss row (mirror translation) and a bottom foreign word row.
+      // We query the full interlinear word containers ([data-word-idx]) plus punctuation so the passage box
+      // includes both the mirror translation and original words together.
+      const hasInterlinear = Boolean(el.querySelector('[data-orig-row="true"]'));
+      let rawRects: DOMRect[] = [];
+      if (hasInterlinear) {
+        const wordSpans = Array.from(el.querySelectorAll<HTMLElement>('[data-word-idx]'));
+        const punctSpans = Array.from(el.querySelectorAll<HTMLElement>('span.inline'));
+        const interlinearItems = [...wordSpans, ...punctSpans];
+        if (interlinearItems.length > 0) {
+          rawRects = interlinearItems.flatMap((s) => Array.from(s.getClientRects()));
+        } else {
+          rawRects = Array.from(el.getClientRects());
+        }
+      } else {
+        rawRects = Array.from(el.getClientRects());
+      }
       if (rawRects.length === 0) return;
 
       // Map rects relative to container
@@ -124,8 +140,8 @@ export const PassageHighlightOverlay: React.FC<PassageHighlightOverlayProps> = (
 
       if (clusters.length === 0) return;
 
-      const padX = 3;
-      const padY = 2;
+      const padX = hasInterlinear ? 4 : 3;
+      const padY = hasInterlinear ? 3 : 2;
       const subPaths: string[] = [];
 
       clusters.forEach((cluster) => {

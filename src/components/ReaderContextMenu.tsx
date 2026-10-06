@@ -65,7 +65,9 @@ export interface ReaderContextMenuProps {
   ) => void;
   onDeletePassageReplacement: (replacementId: string) => void;
   onDecipherWord: (cleanWord: string) => void;
+  onDecipherWordWithWebAssist?: (cleanWord: string) => void;
   onDecipherPassage?: (passageText: string) => void;
+  onDecipherPassageWithWebAssist?: (passageText: string) => void;
   onSpeak: (text: string) => void;
   onTogglePreferCompound?: (pIdx: number, wIdx: number) => void;
   onEditCompositeCompoundMeaning?: (pIdx: number, groupId: string, newMeaning: string) => void;
@@ -88,7 +90,9 @@ const ReaderContextMenuInner: React.FC<ReaderContextMenuProps & { menuState: Con
   onSavePassageReplacement,
   onDeletePassageReplacement,
   onDecipherWord,
+  onDecipherWordWithWebAssist,
   onDecipherPassage,
+  onDecipherPassageWithWebAssist,
   onSpeak,
   onTogglePreferCompound,
   onEditCompositeCompoundMeaning,
@@ -720,6 +724,29 @@ const ReaderContextMenuInner: React.FC<ReaderContextMenuProps & { menuState: Con
           </div>
         </button>
 
+        {/* Ask Word via Web UI Assist */}
+        {onDecipherWordWithWebAssist && (
+          <button
+            onClick={() => {
+              onDecipherWordWithWebAssist(menuState.cleanWord || menuState.word);
+              onClose();
+            }}
+            className="w-full px-3.5 py-2 flex items-center space-x-2.5 hover:bg-purple-950/40 text-left transition group cursor-pointer border border-transparent hover:border-purple-800/40 rounded-lg mx-0.5"
+            id="btn-context-web-assist-word"
+          >
+            <Globe className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="truncate">
+              <div className="font-medium text-purple-200 group-hover:text-purple-100 truncate flex items-center space-x-1.5">
+                <span>Ask via Web UI Assist</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-900/80 text-purple-300 font-mono">Claude / ChatGPT / AI Studio</span>
+              </div>
+              <div className="text-[10px] text-stone-400 truncate">
+                Copy prompt & launch web browser AI
+              </div>
+            </div>
+          </button>
+        )}
+
         {/* Decipher Selected Passage if any */}
         {isSelectionActive && onDecipherPassage && (
           <button
@@ -738,6 +765,31 @@ const ReaderContextMenuInner: React.FC<ReaderContextMenuProps & { menuState: Con
                 Decipher Selected Passage
               </div>
               <div className="text-[10px] text-stone-500 truncate italic">
+                "{menuState.selectedText?.slice(0, 30)}..."
+              </div>
+            </div>
+          </button>
+        )}
+
+        {/* Ask Selected Passage via Web UI Assist */}
+        {isSelectionActive && onDecipherPassageWithWebAssist && (
+          <button
+            onClick={() => {
+              if (menuState.selectedText) {
+                onDecipherPassageWithWebAssist(menuState.selectedText);
+                onClose();
+              }
+            }}
+            className="w-full px-3.5 py-2 flex items-center space-x-2.5 hover:bg-purple-950/40 text-left transition group cursor-pointer border border-transparent hover:border-purple-800/40 rounded-lg mx-0.5"
+            id="btn-context-web-assist-passage"
+          >
+            <Globe className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform shrink-0" />
+            <div className="truncate">
+              <div className="font-medium text-purple-200 group-hover:text-purple-100 truncate flex items-center space-x-1.5">
+                <span>Ask Passage via Web UI Assist</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-900/80 text-purple-300 font-mono">Claude / ChatGPT</span>
+              </div>
+              <div className="text-[10px] text-stone-400 truncate italic">
                 "{menuState.selectedText?.slice(0, 30)}..."
               </div>
             </div>

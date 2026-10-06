@@ -67,6 +67,26 @@
         "scrollPositions": { "type": "object" },
         "updatedAt": { "type": "string" }
       }
+    },
+    "MirrorTranslation": {
+      "title": "MirrorTranslation",
+      "description": "Etymological calque and interlinear mirror translation for a text",
+      "type": "object",
+      "properties": {
+        "textId": { "type": "string" },
+        "sourceTextTitle": { "type": "string" },
+        "language": { "type": "string" },
+        "paragraphs": { "type": "array" },
+        "keepOrigGlobalWords": { "type": "array" },
+        "customReplacements": { "type": "array" },
+        "compositeLinks": { "type": "array" },
+        "compositeDisplayMode": { "type": "string" },
+        "untranslatedWords": { "type": "array" },
+        "modelBlueprintId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["textId", "paragraphs"]
     }
   },
   "firestore": {
@@ -82,9 +102,17 @@
       "schema": "Annotation",
       "description": "Deciphered annotations and notes"
     },
+    "/users/{userId}/mirrors/{mirrorId}": {
+      "schema": "MirrorTranslation",
+      "description": "User mirror translation calques by textId"
+    },
     "/users/{userId}/settings/config": {
       "schema": "UserConfig",
       "description": "User settings and reading preferences"
+    },
+    "/users/{userId}/settings/mirrors": {
+      "schema": "object",
+      "description": "Legacy mirrors sync metadata pointer"
     },
     "/users/{userId}/meta/syncInfo": {
       "schema": "object",

@@ -7,7 +7,9 @@ import {
   ReaderSettings, 
   QueryResult, 
   BlueprintType,
-  ActiveDecipherQuery
+  ActiveDecipherQuery,
+  LLMModelBlueprint,
+  TranslationChatMessage
 } from './types';
 import { 
   initStorage, 
@@ -18,14 +20,22 @@ import {
   getStoredAnnotations, 
   saveAnnotation, 
   deleteAnnotation, 
+  updateAnnotationConversation,
   saveLLMConfig, 
   saveReaderSettings,
   saveTexts,
   saveBlueprints,
   getStoredScrollPositions,
   saveStoredScrollPosition,
-  getStoredMirrorTranslations
+  getStoredMirrorTranslations,
+  resolveLLMConfigForBlueprint,
+  getStoredLanguages,
+  getStoredLLMModelBlueprints,
+  saveLLMModelBlueprints,
+  mergeImportedDecipherChats
 } from './services/storageService';
+// [MIGRATION-V1-TO-V2: MARKED FOR DELETION IN FUTURE VERSIONS]
+import { runAutoLegacyChatMigration } from './services/legacyChatMigrationService';
 import { executeLLMQueryStream, buildQueryPrompt } from './services/llmService';
 import { 
   auth, 
@@ -69,6 +79,7 @@ export default function App() {
   // Data State
   const [texts, setTexts] = useState<TextItem[]>([]);
   const [blueprints, setBlueprints] = useState<QueryBlueprint[]>([]);
+  const [llmModelBlueprints, setLlmModelBlueprints] = useState<LLMModelBlueprint[]>([]);
   const [activeText, setActiveText] = useState<TextItem | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [llmConfig, setLlmConfig] = useState<LLMConfig>({
@@ -294,11 +305,43 @@ export default function App() {
     setBlueprints(data.blueprints);
     setLlmConfig(data.llmConfig);
     setReaderSettings(data.readerSettings);
+    setLlmModelBlueprints(data.llmModelBlueprints || getStoredLLMModelBlueprints());
 
     if (data.texts.length > 0) {
       setActiveText(data.texts[0]);
     }
+
+    // [MIGRATION-V1-TO-V2: MARKED FOR DELETION IN FUTURE VERSIONS]
+    // Run auto-migration for legacy chats where only one translation exists
+    runAutoLegacyChatMigration();
   }, []);
+
+  // Global Active LLM Model Blueprint Switcher
+  const handleSelectModelBlueprint = (model: LLMModelBlueprint) => {
+    const updatedConfig: LLMConfig = {
+      ...llmConfig,
+      provider: model.provider,
+      modelName: model.modelName,
+      customApiKey: model.customApiKey,
+      customBaseUrl: model.customBaseUrl,
+      requestJsonTemplate: model.requestJsonTemplate,
+      activeCustomProviderId: model.activeCustomProviderId,
+      temperature: model.temperature,
+    };
+    setLlmConfig(updatedConfig);
+    saveLLMConfig(updatedConfig);
+
+    const updatedModels = (llmModelBlueprints.length > 0 ? llmModelBlueprints : getStoredLLMModelBlueprints()).map((m) => ({
+      ...m,
+      isDefault: m.id === model.id,
+    }));
+    setLlmModelBlueprints(updatedModels);
+    saveLLMModelBlueprints(updatedModels);
+
+    if (currentUser) {
+      syncSettingsToCloud(currentUser.uid, updatedConfig, readerSettings);
+    }
+  };
 
   // Sync annotations when activeText changes
   useEffect(() => {
@@ -347,7 +390,8 @@ export default function App() {
     setBlueprints(updatedBp);
 
     if (currentUser) {
-      syncBlueprintToCloud(currentUser.uid, bp);
+      const savedItem = updatedBp.find((b) => b.id === bp.id) || bp;
+      syncBlueprintToCloud(currentUser.uid, savedItem);
     }
   };
 
@@ -379,13 +423,22 @@ export default function App() {
   const runDecipherQuery = async (
     type: BlueprintType,
     targetText: string,
-    blueprintId: string
+    blueprintId: string,
+    forceWebAssist = false
   ) => {
     const queryId = `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const controller = new AbortController();
     abortControllersRef.current.set(queryId, controller);
 
     const blueprint = blueprints.find((b) => b.id === blueprintId) || blueprints[0];
+    const resolvedConfig = resolveLLMConfigForBlueprint(blueprint?.modelBlueprintId, llmConfig);
+    const effectiveLLMConfig: LLMConfig = forceWebAssist
+      ? {
+          ...resolvedConfig,
+          provider: 'web-assist',
+          modelName: resolvedConfig.provider === 'web-assist' ? resolvedConfig.modelName : 'Claude 3.7 Sonnet (Web)',
+        }
+      : resolvedConfig;
     const bpTemplate = blueprint ? blueprint.template : (type === 'word' ? '{word}' : '{text}');
     const prompt = buildQueryPrompt(bpTemplate, targetText, type);
 
@@ -408,18 +461,37 @@ export default function App() {
     setIsResultFromCache(false);
     setDecipherTarget({ type, targetText, blueprintId });
     setRawQueryPrompt(prompt);
+
+    if (effectiveLLMConfig.provider === 'web-assist' || forceWebAssist) {
+      setIsDecipherLoading(false);
+      setDecipherResult({
+        text: '',
+        providerUsed: 'web-assist',
+        modelUsed: effectiveLLMConfig.modelName || 'Claude Pro (Web)',
+      });
+      setActiveQueries((prev) =>
+        prev.map((q) =>
+          q.id === queryId
+            ? { ...q, status: 'completed', streamText: '' }
+            : q
+        )
+      );
+      openDecipherSheet();
+      return;
+    }
+
     setIsDecipherLoading(true);
     setDecipherResult({
       text: '',
-      providerUsed: llmConfig.provider,
-      modelUsed: llmConfig.modelName,
+      providerUsed: effectiveLLMConfig.provider,
+      modelUsed: effectiveLLMConfig.modelName,
     });
     openDecipherSheet();
 
     try {
       const res = await executeLLMQueryStream(
         prompt,
-        llmConfig,
+        effectiveLLMConfig,
         (chunkText) => {
           // Update query in activeQueries list
           setActiveQueries((prev) =>
@@ -431,8 +503,8 @@ export default function App() {
           if (currentViewingQueryIdRef.current === queryId) {
             setDecipherResult({
               text: chunkText,
-              providerUsed: llmConfig.provider,
-              modelUsed: llmConfig.modelName,
+              providerUsed: effectiveLLMConfig.provider,
+              modelUsed: effectiveLLMConfig.modelName,
             });
           }
         },
@@ -483,8 +555,8 @@ export default function App() {
             queryUsed: prompt,
             result: res.text,
             createdAt: new Date().toISOString(),
-            modelUsed: res.modelUsed || llmConfig.modelName,
-            providerUsed: res.providerUsed || llmConfig.provider,
+            modelUsed: res.modelUsed || effectiveLLMConfig.modelName,
+            providerUsed: res.providerUsed || effectiveLLMConfig.provider,
           };
 
           const updatedAnns = saveAnnotation(autoAnn);
@@ -755,11 +827,18 @@ export default function App() {
   };
 
   // Handle Single Word Click/Tap
-  const handleWordClick = (word: string, blueprintId: string) => {
+  const handleWordClick = (word: string, blueprintId: string, forceWebAssist = false) => {
     setSelectedWord(word);
     setSelectedPassage(null);
     const clean = word.trim().toLowerCase();
     const cleanNorm = normalizeForMatch(word);
+
+    // If explicit Web Assist requested, bypass cache and directly open Web Assist
+    if (forceWebAssist) {
+      setIsResultFromCache(false);
+      runDecipherQuery('word', word, blueprintId, true);
+      return;
+    }
 
     // 1. Is there an active query already loading in the background for this exact word?
     const existingLoading = activeQueries.find(
@@ -817,11 +896,18 @@ export default function App() {
   };
 
   // Handle Passage Selection (with cached annotation check for exact passage match)
-  const handlePassageSelect = (passage: string, blueprintId: string) => {
+  const handlePassageSelect = (passage: string, blueprintId: string, forceWebAssist = false) => {
     setSelectedPassage(passage);
     setSelectedWord(null);
     const cleanNorm = normalizeForMatch(passage);
     const cleanRaw = passage.trim().toLowerCase();
+
+    // If explicit Web Assist requested, bypass cache and directly open Web Assist
+    if (forceWebAssist) {
+      setIsResultFromCache(false);
+      runDecipherQuery('passage', passage, blueprintId, true);
+      return;
+    }
 
     // 1. Is there an active query already loading in the background for this exact passage?
     const existingLoading = activeQueries.find(
@@ -924,6 +1010,52 @@ export default function App() {
     }
   };
 
+  // Handle Apply Web Assist Translation Response
+  const handleApplyWebAssistResult = (responseText: string, siteName: string, _siteUrl?: string) => {
+    if (!decipherTarget || !responseText.trim()) return;
+    const bp = blueprints.find((b) => b.id === decipherTarget.blueprintId);
+
+    const newAnnotation: Annotation = {
+      id: `ann-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      textId: activeText ? activeText.id : 'playground-text',
+      type: decipherTarget.type,
+      target: decipherTarget.targetText,
+      blueprintName: bp ? bp.name : 'Custom Query',
+      queryUsed: rawQueryPrompt,
+      result: responseText.trim(),
+      createdAt: new Date().toISOString(),
+      modelUsed: siteName,
+      providerUsed: 'web-assist',
+    };
+
+    const updated = saveAnnotation(newAnnotation);
+    if (activeText) {
+      setAnnotations(updated.filter((a) => a.textId === activeText.id));
+      setTexts((prevTexts) =>
+        prevTexts.map((t) =>
+          t.id === activeText.id ? { ...t, updatedAt: newAnnotation.createdAt } : t
+        )
+      );
+    } else {
+      setAnnotations(updated);
+    }
+
+    setDecipherResult({
+      text: responseText.trim(),
+      providerUsed: 'web-assist',
+      modelUsed: siteName,
+    });
+    setIsDecipherLoading(false);
+
+    if (currentUser) {
+      syncAnnotationToCloud(currentUser.uid, newAnnotation).then((syncedIso) => {
+        if (syncedIso) {
+          setLastSyncedTimestamp(syncedIso);
+        }
+      });
+    }
+  };
+
   // Handle Delete Annotation
   const handleDeleteAnnotation = (id: string) => {
     const updated = deleteAnnotation(id);
@@ -935,6 +1067,25 @@ export default function App() {
 
     if (currentUser) {
       deleteAnnotationFromCloud(currentUser.uid, id);
+    }
+  };
+
+  // Handle Update Annotation Conversation (scoped strictly per translation annotation)
+  const handleUpdateAnnotationConversation = (
+    annotationId: string,
+    conversation: TranslationChatMessage[]
+  ) => {
+    const updated = updateAnnotationConversation(annotationId, conversation);
+    if (activeText) {
+      setAnnotations(updated.filter((a) => a.textId === activeText.id));
+    } else {
+      setAnnotations(updated);
+    }
+    if (currentUser) {
+      const targetAnn = updated.find((a) => a.id === annotationId);
+      if (targetAnn) {
+        syncAnnotationToCloud(currentUser.uid, targetAnn);
+      }
     }
   };
 
@@ -972,6 +1123,19 @@ export default function App() {
     }
     if (cloudData.mirrorTranslations && typeof cloudData.mirrorTranslations === 'object') {
       localStorage.setItem('symbolic_mirror_translations_v1', JSON.stringify(cloudData.mirrorTranslations));
+    }
+    if (cloudData.decipherChats && typeof cloudData.decipherChats === 'object') {
+      mergeImportedDecipherChats(cloudData.decipherChats);
+    }
+    // [MIGRATION-V1-TO-V2: MARKED FOR DELETION IN FUTURE VERSIONS]
+    // Run auto-migration for legacy chats: if only one matching translation exists, apply it!
+    const migResult = runAutoLegacyChatMigration(cloudData.annotations || annotations);
+    if (migResult.migratedCount > 0) {
+      if (activeText) {
+        setAnnotations(migResult.updatedAnnotations.filter((a) => a.textId === activeText.id));
+      } else {
+        setAnnotations(migResult.updatedAnnotations);
+      }
     }
   };
 
@@ -1023,6 +1187,9 @@ export default function App() {
         onOpenCloudSyncModal={() => setIsCloudSyncModalOpen(true)}
         isCloudSyncing={isCloudSyncing}
         lastSyncedTimestamp={lastSyncedTimestamp}
+        llmConfig={llmConfig}
+        llmModelBlueprints={llmModelBlueprints}
+        onSelectModelBlueprint={handleSelectModelBlueprint}
       />
 
       {/* Main Content Area */}
@@ -1068,10 +1235,20 @@ export default function App() {
             }}
             onUpdateTextBlueprints={handleUpdateTextBlueprints}
             onWordClick={handleWordClick}
+            onWordClickWebAssist={(word, bpId) => {
+              const effectiveBpId = bpId || activeText.wordBlueprintId || blueprints.find((b) => b.type === 'word')?.id || '';
+              handleWordClick(word, effectiveBpId, true);
+            }}
             onPassageSelect={handlePassageSelect}
+            onPassageSelectWebAssist={(passage, bpId) => {
+              const effectiveBpId = bpId || activeText.passageBlueprintId || blueprints.find((b) => b.type === 'passage')?.id || '';
+              handlePassageSelect(passage, effectiveBpId, true);
+            }}
             onOpenAnnotations={() => setIsAnnotationsOpen(true)}
             selectedWord={selectedWord}
             selectedPassage={selectedPassage}
+            llmModelBlueprints={llmModelBlueprints}
+            onSelectModelBlueprint={handleSelectModelBlueprint}
           />
         )}
 
@@ -1110,6 +1287,11 @@ export default function App() {
             onSaveBlueprint={handleSaveBlueprint}
             onDeleteBlueprint={handleDeleteBlueprint}
             llmConfig={llmConfig}
+            llmModelBlueprints={llmModelBlueprints}
+            onRefreshLLMModels={() => {
+              setLlmModelBlueprints(getStoredLLMModelBlueprints());
+            }}
+            onSelectModelBlueprint={handleSelectModelBlueprint}
           />
         )}
 
@@ -1131,6 +1313,12 @@ export default function App() {
             currentUser={currentUser}
             onOpenCloudSyncModal={() => setIsCloudSyncModalOpen(true)}
             isCloudSynced={Boolean(currentUser)}
+            llmModelBlueprints={llmModelBlueprints}
+            onSelectModelBlueprint={handleSelectModelBlueprint}
+            onNavigateToTab={(t) => navigateToTab(t)}
+            onRefreshLLMModels={() => {
+              setLlmModelBlueprints(getStoredLLMModelBlueprints());
+            }}
           />
         )}
       </main>
@@ -1201,9 +1389,11 @@ export default function App() {
             type={decipherTarget?.type || 'word'}
             targetText={decipherTarget?.targetText || ''}
             blueprintName={activeBlueprintName}
+            activeBlueprintId={decipherTarget?.blueprintId}
             result={decipherResult}
             isLoading={isDecipherLoading}
             onSaveAnnotation={handleSaveAnnotation}
+            onApplyWebAssistResult={handleApplyWebAssistResult}
             isSaved={isCurrentAnnotationSaved}
             savedTranslations={matchingTranslations}
             onDeleteSingleTranslation={handleDeleteAnnotation}
@@ -1230,6 +1420,10 @@ export default function App() {
               }
             }}
             onRunCustomPrompt={runCustomPromptQuery}
+            onUpdateAnnotationConversation={handleUpdateAnnotationConversation}
+            llmConfig={llmConfig}
+            llmModelBlueprints={llmModelBlueprints}
+            onSelectModelBlueprint={handleSelectModelBlueprint}
           />
         );
       })()}

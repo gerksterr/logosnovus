@@ -29,6 +29,7 @@ import {
   SyncMeta, 
   CloudUserData 
 } from '../services/cloudSyncService';
+import { getAllStoredDecipherChats } from '../services/storageService';
 import { 
   TextItem, 
   QueryBlueprint, 
@@ -149,7 +150,10 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({
     setIsUploading(true);
     setStatusMessage(null);
     try {
-      const result = await saveAllToCloud(uid, localData);
+      const result = await saveAllToCloud(uid, {
+        ...localData,
+        decipherChats: getAllStoredDecipherChats(),
+      });
       onUpdateLastSynced(result.syncedAt);
       
       // Update local storage and app state with the merged data
