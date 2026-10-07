@@ -3,6 +3,7 @@
 
 import type { Doc } from '../text/document';
 import { chunkAtOrAfter } from '../text/document';
+import { reveal } from './lazy';
 
 export const headerHeight = () => (document.querySelector('.reader-bar') as HTMLElement | null)?.getBoundingClientRect().bottom ?? 0;
 
@@ -29,7 +30,11 @@ export function scrollToOffset(root: HTMLElement, doc: Doc, offset: number, smoo
   const ci = chunkAtOrAfter(doc, offset);
   if (ci < 0) return;
   const el = root.querySelector<HTMLElement>(`.c[data-c="${ci}"], .cap[data-c="${ci}"]`) ?? root.querySelector<HTMLElement>(`[data-c="${ci}"]`);
-  if (!el) return;
+  if (!el) {
+    // long text: the paragraph is not rendered yet
+    void reveal(doc.chunks[ci].para).then(() => root.querySelector(`[data-c="${ci}"]`) && scrollToOffset(root, doc, offset, smooth));
+    return;
+  }
   const y = el.getBoundingClientRect().top + scrollY - headerHeight() - 6;
   scrollTo({ top: Math.max(0, y), behavior: smooth ? 'smooth' : 'instant' });
 }

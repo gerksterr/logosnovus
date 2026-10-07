@@ -1,25 +1,13 @@
-import { memo } from 'react';
-import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { lazy, Suspense } from 'react';
 
-/** \[…\] and \(…\) → $$…$$ and $…$ (models use both conventions). */
-const normalizeMath = (s: string) =>
-  s.replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `\n$$\n${m.trim()}\n$$\n`).replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `$${m.trim()}$`);
+// The markdown + KaTeX renderer is about half the app's code but only needed
+// once an answer is shown, so it loads on demand (and is precached for offline).
+const Render = lazy(() => import('./MarkdownRender'));
 
-function MarkdownImpl({ text }: { text: string }) {
+export function Markdown({ text }: { text: string }) {
   return (
-    <div className="md" dir="auto">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
-        rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: false }]]}
-        components={{ a: ({ node: _node, ...p }) => <a {...p} target="_blank" rel="noopener noreferrer" /> }}
-      >
-        {normalizeMath(text)}
-      </ReactMarkdown>
-    </div>
+    <Suspense fallback={<div className="md" style={{ whiteSpace: 'pre-wrap' }}>{text}</div>}>
+      <Render text={text} />
+    </Suspense>
   );
 }
-
-export const Markdown = memo(MarkdownImpl);

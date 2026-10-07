@@ -33,6 +33,7 @@ let fb: FB | null = null;
 let dirty = new Set<string>();
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribe: (() => void) | null = null;
+let watching: Promise<void> | null = null;
 
 async function loadFirebase() {
   const [{ initializeApp }, auth, fs] = await Promise.all([import('firebase/app'), import('firebase/auth'), import('firebase/firestore')]);
@@ -63,7 +64,13 @@ export function startSync() {
   if (localStorage.getItem(SIGNED_IN)) void connect();
 }
 
-async function connect() {
+/** Watches the auth state (once per session) and starts syncing for the signed-in user. */
+function connect(): Promise<void> {
+  watching ??= watchAuth();
+  return watching;
+}
+
+async function watchAuth() {
   useSync.setState({ status: 'connecting' });
   try {
     const f = await firebase();
@@ -86,7 +93,7 @@ async function connect() {
 
 export async function signIn() {
   const f = await firebase();
-  if (!unsubscribe && !useSync.getState().user) void connect();
+  await connect();
   const provider = new f.auth.GoogleAuthProvider();
   try {
     await f.auth.signInWithPopup(f.authInst, provider);

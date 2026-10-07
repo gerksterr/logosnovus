@@ -162,3 +162,32 @@ test('several lookups run at once; finished ones wait in the dock until seen', a
   await page.keyboard.press('Escape');
   await expect(page.locator('.dock-item')).toHaveCount(1);
 });
+
+test('book-length texts render lazily and still restore the reading position', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop');
+  const para = (i: number) => `Absatz ${i}: Also sprach Zarathustra zum Volke und schwieg, denn sie verstanden ihn nicht, und er sah sie lange an.`;
+  const content = Array.from({ length: 900 }, (_, i) => para(i)).join('\n\n');
+  await page.goto('/#/settings');
+  const backup = { version: 2, texts: [{ id: 'book', title: 'Book', language: 'German', content, createdAt: '2026-01-01', updatedAt: '2026-01-01' }], annotations: [] };
+  await page.setInputFiles('input[type=file]', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+  await page.click('.modal-foot >> text=Import');
+  await page.goto('/#/read/book');
+  await page.waitForSelector('.text .para .w');
+  expect(await page.locator('.para.ph').count()).toBeGreaterThan(700); // most of the book is not rendered
+  for (let i = 0; i < 12; i++) {
+    await page.mouse.wheel(0, 2500);
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(1500);
+  const first = () =>
+    page.evaluate(() => {
+      const bar = document.querySelector('.reader-bar')!.getBoundingClientRect().bottom;
+      return [...document.querySelectorAll('.text .w')].find((w) => w.getBoundingClientRect().top >= bar)?.closest('.para')?.textContent?.slice(0, 10);
+    });
+  const before = await first();
+  expect(before).toMatch(/^Absatz \d+/);
+  await page.reload();
+  await page.waitForSelector('.text .para .w');
+  await page.waitForTimeout(400);
+  expect(await first()).toBe(before);
+});

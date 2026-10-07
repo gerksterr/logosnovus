@@ -2,12 +2,13 @@
 // lookups. Display modes are a class on this element, so switching between
 // original / mirror / aligned / interlinear never re-renders the text.
 
-import { useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useSettings } from '../app/settings';
 import { useUI } from '../app/ui';
 import { useStore } from '../data/store';
 import { compositeTarget, openTarget, openTranslation, wordTarget } from '../sheet/open';
 import { copyText, selectionRange, snapToWords } from './dom';
+import { useLazyParagraphs } from './lazy';
 import { menuItems } from './menu';
 import { noteRanges, Paragraph } from './Paragraph';
 import { LAYOUT_EVENT, passageAt, useHover } from './PassageLayer';
@@ -20,6 +21,8 @@ addEventListener('pointerdown', (e) => (lastPointer = e.pointerType), { capture:
 
 export function TextBody({ data, mode, sel, onSelectWord }: { data: ReaderData; mode: DisplayMode; sel: number; onSelectWord: (wi: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [focus] = useState(() => data.reading?.pos);
+  const lazy = useLazyParagraphs(data.doc, ref, focus);
   const s = useSettings();
   const compound = useStore((st) => !!st.prefs.prefs?.compound);
   const { doc } = data;
@@ -128,7 +131,10 @@ export function TextBody({ data, mode, sel, onSelectWord }: { data: ReaderData; 
       onContextMenu={onContextMenu}
       onCopy={onCopy}
     >
-      {doc.paras.map((_, pi) => (
+      {doc.paras.map((_, pi) =>
+        lazy.lazy && !lazy.mounted.has(pi) ? (
+          <p key={pi} className="para ph" data-p={pi} style={{ height: lazy.estimate(pi, s.fontSize * s.lineHeight) }} />
+        ) : (
         <Paragraph
           key={pi}
           doc={doc}
@@ -143,7 +149,8 @@ export function TextBody({ data, mode, sel, onSelectWord }: { data: ReaderData; 
           sel={sel >= 0 && doc.words[sel] && doc.chunks[doc.words[sel].chunk].para === pi ? sel : -1}
           passages={perPara[pi].length ? perPara[pi] : empty}
         />
-      ))}
+        ),
+      )}
     </div>
   );
 }
