@@ -50,10 +50,14 @@ model's JSON request body is editable (e.g. add `"reasoning": {"effort": "low"}`
 
 ## Deploying
 
-`npm run build` produces a static site in `dist/` that runs from any host and
-sub-path. The repository is private, so the simplest free hosts are
-**Cloudflare Pages** or **Netlify**: connect the GitHub repository, build command
-`npm run build`, output directory `dist`. Every push then redeploys.
+Every push to `main` is checked (types, unit tests) and published to GitHub
+Pages by `.github/workflows/deploy.yml`, at
+`https://<owner>.github.io/logosnovus/`. One-time setup: the repository must be
+public (or on a paid plan), and *Settings → Pages → Source* must be
+**GitHub Actions**.
+
+`npm run build` produces a static site in `dist/` that also runs from any other
+host or sub-path (Cloudflare Pages, Netlify…).
 
 Google sign-in uses the existing Firebase project (`src/firebase-config.json`).
 Add the new site's domain once in the Firebase console → *Authentication →
