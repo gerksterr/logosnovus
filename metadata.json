@@ -1,6 +1,0 @@
-{
-  "name": "Symbolic Text Decipher",
-  "description": "Cross-platform desktop and mobile web app for reading and deciphering foreign symbolic texts with Google Cloud multi-client sync, word etymology, and passage-level AI query blueprints.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

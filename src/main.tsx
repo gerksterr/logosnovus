@@ -1,28 +1,19 @@
-import {StrictMode} from 'react';
-import {createRoot} from 'react-dom/client';
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
 import 'katex/dist/katex.min.css';
-import App from './App.tsx';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import './index.css';
-
-// Register Service Worker for offline PWA capability
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(
-      (reg) => console.log('[PWA] ServiceWorker registered with scope:', reg.scope),
-      (err) => console.warn('[PWA] ServiceWorker registration failed:', err)
-    );
-  });
-} else if ('serviceWorker' in navigator) {
-  // Also register in dev mode to allow testing offline mode
-  navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('[PWA] Dev SW:', err));
-}
+import './styles/base.css';
+import './styles/app.css';
+import './styles/reader.css';
+import './styles/panels.css';
+import { App } from './app/App';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
+    <App />
   </StrictMode>,
 );
 
+// Offline support: the service worker precaches the whole app (see vite.config.ts).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  import('virtual:pwa-register').then(({ registerSW }) => registerSW({ immediate: true }));
+}
