@@ -1,8 +1,11 @@
 node_modules/
-build/
 dist/
+dev-dist/
 coverage/
+test-results/
+playwright-report/
 .DS_Store
 *.log
 .env*
-!.env.example
+# never commit personal backups (they can contain API keys)
+*backup*.json
