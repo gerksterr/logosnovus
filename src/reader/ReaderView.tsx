@@ -1,19 +1,22 @@
-import { ArrowLeft, Layers, Map as MapIcon, NotebookText, Type } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, BookOpen, Columns2, Layers, Map as MapIcon, NotebookText, Rows3, Type } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { go } from '../app/router';
 import { isTouch, setSetting, useSettings } from '../app/settings';
 import { useUI } from '../app/ui';
-import { versionsFor } from '../data/selectors';
+import { translationIndex, versionsFor } from '../data/selectors';
+import { TextEditor } from '../library/TextEditor';
 import { put, useStore } from '../data/store';
 import { openTarget, passageTarget } from '../sheet/open';
-import { ModelSwitch } from '../ui/ModelSwitch';
+import { ModelPicker } from '../ui/ModelPicker';
 import { CalquePanel } from './CalquePanel';
 import { selectionRange, snapToWords } from './dom';
 import { menuItems } from './menu';
 import { Minimap } from './Minimap';
 import { NotesDrawer } from './NotesDrawer';
+import { ReaderHead } from './ReaderHead';
 import { ReaderOptions } from './ReaderOptions';
 import { scrollToOffset, topOffset } from './scroll';
+import { stopSpeaking } from './speech';
 import { TextBody, type DisplayMode } from './TextBody';
 import { useReader } from './useReader';
 
@@ -31,20 +34,20 @@ function useNarrow(ref: React.RefObject<HTMLDivElement | null>) {
   }, [ref]);
   return narrow;
 }
-const MODES: [DisplayMode, string, string][] = [
-  ['orig', 'Original', 'O'],
-  ['mirror', 'Mirror', 'M'],
-  ['aligned', 'Aligned', 'M'],
-  ['inter', 'Interlinear', 'I'],
+const MODES: [DisplayMode, string, string, typeof BookOpen][] = [
+  ['orig', 'Original', 'O', BookOpen],
+  ['mirror', 'Mirror', 'M', ArrowLeftRight],
+  ['aligned', 'Aligned', 'M', Columns2],
+  ['inter', 'Interlinear', 'I', Rows3],
 ];
 
-export function ReaderView({ textId, embedded = false }: { textId: string; embedded?: boolean }) {
+export function ReaderView({ textId, embedded = false, at }: { textId: string; embedded?: boolean; at?: number }) {
   const data = useReader(textId);
   const s = useSettings();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [mode, setModeState] = useState<DisplayMode>(() => (localStorage.getItem(modeKey(textId)) as DisplayMode) || 'orig');
   const [sel, setSel] = useState(-1);
-  const [panel, setPanel] = useState<null | 'notes' | 'calque' | 'options'>(null);
+  const [panel, setPanel] = useState<null | 'notes' | 'calque' | 'options' | 'edit'>(null);
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
   const sheetOpen = useUI((u) => !!u.sheet);
   const narrow = useNarrow(bodyRef);
@@ -94,13 +97,30 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
   useLayoutEffect(() => {
     if (!data || restored.current || !bodyRef.current) return;
     restored.current = true;
-    const pos = data.reading?.pos;
     const root = bodyRef.current;
+    if (at != null) return; // a link to a word (lexicon): handled below
+    const pos = data.reading?.pos;
     if (pos) {
       scrollToOffset(root, data.doc, pos);
       document.fonts?.ready.then(() => scrollToOffset(root, data.doc, pos)); // fonts can change wrapping
     } else scrollTo({ top: 0 });
   }, [data]);
+
+  // #/read/<id>/<offset>: bring that word to the upper third of the screen and mark it
+  useEffect(() => {
+    if (!data || at == null || !bodyRef.current) return;
+    const root = bodyRef.current;
+    const wi = data.doc.words.findIndex((w) => w.end > at);
+    if (wi >= 0) setSel(wi);
+    const show = () => {
+      scrollToOffset(root, data.doc, at);
+      scrollBy({ top: -innerHeight * 0.3, behavior: 'instant' });
+    };
+    show();
+    document.fonts?.ready.then(show);
+  }, [at, !!data]);
+
+  useEffect(() => stopSpeaking, [textId]);
 
   useEffect(() => {
     if (!data || embedded) return;
@@ -158,13 +178,15 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
   const selSaved = selTarget ? versionsFor(selTarget).length > 0 : false;
   const effMode = hasCalque ? mode : 'orig';
   const showModeBar = hasCalque && (isTouch() || s.mirrorBar || narrow);
+  const noteCount = translationIndex(useStore.getState().translations).byText.get(text.id)?.length ?? 0;
+  const column = { maxWidth: s.width * s.fontSize + 44 };
 
   return (
     <div className={`reader${panel === 'notes' ? ' with-notes' : ''}`}>
       <div className="reader-bar">
         {!embedded && (
-          <button className="icon-btn hide-mobile" onClick={() => go('/')} title="Library">
-            <ArrowLeft size={18} />
+          <button className="icon-btn" onClick={() => go('/')} title="Library" aria-label="Library">
+            <ArrowLeft size={19} />
           </button>
         )}
         <div className="reader-title grow">
@@ -173,29 +195,23 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
         </div>
         {hasCalque && (
           <div className="seg mode-seg hide-mobile" role="tablist" aria-label="Display mode">
-            {MODES.map(([m, label, key]) => (
+            {MODES.map(([m, label, key, Icon]) => (
               <button key={m} className={effMode === m ? 'on' : ''} onClick={() => setMode(m)} title={`${label} (${key})`}>
-                {label}
+                <Icon size={15} />
+                <span className="ml">{label}</span>
               </button>
             ))}
           </div>
         )}
-        <div className="seg lookup-seg hide-mobile" title="What a word click opens">
-          <button className={s.lookup === 'ai' ? 'on' : ''} onClick={() => setSetting('lookup', 'ai')}>
-            AI
-          </button>
-          <button className={s.lookup === 'dict' ? 'on' : ''} onClick={() => setSetting('lookup', 'dict')}>
-            Dictionary
-          </button>
-        </div>
-        <ModelSwitch compact />
+        <ModelPicker compact className="reader-model" />
         <button className={`icon-btn${panel === 'calque' ? ' on' : ''}`} onClick={() => setPanel(panel === 'calque' ? null : 'calque')} title="Calque (word-for-word mirror)">
           <Layers size={18} />
         </button>
         <button className={`icon-btn${panel === 'notes' ? ' on' : ''}`} onClick={() => setPanel(panel === 'notes' ? null : 'notes')} title="Translations in this text">
           <NotebookText size={18} />
+          {noteCount > 0 && <span className="count">{noteCount > 99 ? '99+' : noteCount}</span>}
         </button>
-        <button className={`icon-btn hide-mobile${s.minimap ? ' on' : ''}`} onClick={() => setSetting('minimap', !s.minimap)} title="Minimap">
+        <button className={`icon-btn hide-mobile hide-narrow${s.minimap ? ' on' : ''}`} onClick={() => setSetting('minimap', !s.minimap)} title="Minimap">
           <MapIcon size={18} />
         </button>
         <button className="icon-btn" onClick={() => setPanel('options')} title="Display options">
@@ -204,6 +220,16 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
       </div>
 
       <div ref={bodyRef} className="reader-body">
+        {!embedded && (
+          <ReaderHead
+            data={data}
+            bodyRef={bodyRef}
+            style={column}
+            onCalque={() => setPanel('calque')}
+            onNotes={() => setPanel('notes')}
+            onEdit={() => setPanel('edit')}
+          />
+        )}
         <TextBody data={data} mode={effMode} sel={sel} onSelectWord={setSel} />
       </div>
 
@@ -211,8 +237,9 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
 
       {showModeBar && (
         <div className={`mode-bar${selRange ? ' raised' : ''}`}>
-          {MODES.map(([m, label]) => (
+          {MODES.map(([m, label, , Icon]) => (
             <button key={m} className={effMode === m ? 'on' : ''} onClick={() => setMode(m)}>
+              <Icon size={14} />
               {label}
             </button>
           ))}
@@ -246,6 +273,7 @@ export function ReaderView({ textId, embedded = false }: { textId: string; embed
       {panel === 'notes' && <NotesDrawer data={data} onClose={() => setPanel(null)} />}
       {panel === 'calque' && <CalquePanel text={text} onClose={() => setPanel(null)} />}
       {panel === 'options' && <ReaderOptions onClose={() => setPanel(null)} />}
+      {panel === 'edit' && <TextEditor text={text} onClose={() => setPanel(null)} />}
     </div>
   );
 }

@@ -50,6 +50,7 @@ files a change needs (map below).
 | Streaming parsers | `llm/stream.ts` |
 | Running requests, dock state, saving results | `llm/queries.ts`, `llm/run.ts` |
 | Reader view, toolbar, modes, selection bar | `reader/ReaderView.tsx` |
+| Header card (badges, stats, per-text prompts/models, read aloud) | `reader/ReaderHead.tsx`, `reader/speech.ts` |
 | Text rendering | `reader/TextBody.tsx`, `reader/Paragraph.tsx`, `styles/reader.css` |
 | Long texts (lazy paragraphs) | `reader/lazy.ts` |
 | Passage outlines + hit testing | `reader/geometry.ts`, `reader/PassageLayer.tsx` |
@@ -57,16 +58,20 @@ files a change needs (map below).
 | Scroll memory | `reader/scroll.ts` |
 | Context menu actions | `reader/menu.ts` |
 | Minimap, notes, calque panel, display options | `reader/Minimap.tsx`, `reader/NotesDrawer.tsx`, `reader/CalquePanel.tsx`, `reader/ReaderOptions.tsx` |
-| Translation sheet, chat, dictionary, dock | `sheet/*.tsx`; entry point `sheet/open.ts` |
-| Library, editor, playground, ordering | `library/*` |
+| Translation sheet (versions strip, compare, several models, calque gloss), chat, dictionary, dock | `sheet/*.tsx`; entry point `sheet/open.ts` |
+| Library, editor, playground, ordering, progress/stats | `library/*` |
+| Lexicon (words per language, glosses, concordance) | `lexicon/lexicon.ts` (tests next to it), `lexicon/LexiconView.tsx` |
 | Prompts, models, languages, endpoints | `prompts/PromptsView.tsx` |
-| Settings, keys, backup, sync UI | `settings/SettingsView.tsx` |
+| Settings, keys, sync UI | `settings/SettingsView.tsx`; backup import/export `settings/Backup.tsx` |
 | Cloud sync | `sync/cloud.ts` (tests with a fake Firestore: `sync/cloud.test.ts`) |
 | Routing, Back button, device settings, toasts/dialogs | `app/router.ts`, `app/settings.ts`, `app/ui.ts` |
-| Shared UI (modal, drawer, menu, markdown, model switch) | `ui/*` |
+| Shared UI (modal, drawer, menu, markdown, model picker) | `ui/*` |
 
 ## Style
 
 - Plain CSS with semantic classes in `src/styles/` (`base` tokens/themes, `app`,
-  `reader`, `panels`). Themes only swap CSS variables.
+  `reader`, `panels`). Themes only swap CSS variables. Colour carries meaning:
+  amber = words, violet = passages, cyan = models/calques, green = saved.
+- No native `<select>` for models (its popup ignores the theme on Windows): use
+  `ui/ModelPicker.tsx`. Other selects are fine; `base.css` themes their options.
 - Comments explain why, briefly. Tests sit next to the code they test.

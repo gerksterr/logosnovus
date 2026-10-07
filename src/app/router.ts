@@ -1,5 +1,6 @@
 // Hash routes (work from any static host and offline):
-//   #/            library        #/read/<id>    reader
+//   #/            library        #/read/<id>[/<offset>]  reader (optionally at a word)
+//   #/lexicon[/<lang>[/<word>]]  words looked up, per language
 //   #/play        playground     #/prompts      prompts, models, languages
 //   #/settings    settings
 // Overlays (sheet, dialogs) push a history entry so Back closes them first.
@@ -8,14 +9,16 @@ import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 export type Route =
   | { view: 'library' }
-  | { view: 'read'; id: string }
+  | { view: 'read'; id: string; at?: number }
+  | { view: 'lexicon'; lang?: string; word?: string }
   | { view: 'play' }
   | { view: 'prompts'; tab?: string }
   | { view: 'settings' };
 
 export function parseHash(hash: string): Route {
-  const [, a, b] = hash.replace(/^#/, '').split('/');
-  if (a === 'read' && b) return { view: 'read', id: decodeURIComponent(b) };
+  const [, a, b, c] = hash.replace(/^#/, '').split('/');
+  if (a === 'read' && b) return { view: 'read', id: decodeURIComponent(b), at: c && /^\d+$/.test(c) ? +c : undefined };
+  if (a === 'lexicon') return { view: 'lexicon', lang: b ? decodeURIComponent(b) : undefined, word: c ? decodeURIComponent(c) : undefined };
   if (a === 'play') return { view: 'play' };
   if (a === 'prompts') return { view: 'prompts', tab: b };
   if (a === 'settings') return { view: 'settings' };

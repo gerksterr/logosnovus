@@ -4,12 +4,15 @@
 import { Check, CircleAlert, X } from 'lucide-react';
 import { useUI } from '../app/ui';
 import { go } from '../app/router';
-import { dismissQuery, useQueries } from '../llm/queries';
+import { targetKey } from '../data/selectors';
+import { dismissQuery, isFor, useQueries } from '../llm/queries';
 
 export function Dock() {
   const queries = useQueries((s) => s.queries);
-  const sheetKey = useUI((s) => s.sheet?.queryId);
-  const visible = queries.filter((q) => q.kind !== 'chat' && q.id !== sheetKey && (q.status === 'running' || (!q.seen && q.status !== 'stopped')));
+  const sheetTarget = useUI((s) => s.sheet?.target);
+  const sheetKey = sheetTarget ? targetKey(sheetTarget) : null;
+  // requests for the target in the open sheet are shown there
+  const visible = queries.filter((q) => q.kind !== 'chat' && !(sheetKey && isFor(q, sheetKey)) && (q.status === 'running' || (!q.seen && q.status !== 'stopped')));
   if (!visible.length) return null;
   return (
     <div className="dock" aria-label="Requests">
@@ -30,6 +33,7 @@ export function Dock() {
             <span className="dock-title" dir="auto">
               {q.title}
             </span>
+            <span className="dock-model">{q.model}</span>
           </button>
           <button className="icon-btn" onClick={() => dismissQuery(q.id)} aria-label={q.status === 'running' ? 'Stop' : 'Dismiss'}>
             <X size={14} />

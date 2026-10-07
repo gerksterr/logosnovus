@@ -85,8 +85,8 @@ export function NotesDrawer({ data, onClose }: { data: ReaderData; onClose: () =
                     <span className={`note-label${i.kind === 'passage' ? ' passage' : ''}`} dir="auto">
                       {i.label}
                     </span>
-                    {i.count > 1 && <span className="chip">{i.count}</span>}
-                    {i.at == null && i.kind === 'passage' && <span className="chip">not found in text</span>}
+                    {i.count > 1 && <span className="badge">{i.count}</span>}
+                    {i.at == null && i.kind === 'passage' && <span className="badge">not found in text</span>}
                   </button>
                   {i.at != null && (
                     <button

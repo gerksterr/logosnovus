@@ -56,7 +56,7 @@ export function docFor(text: Pick<Text, 'content' | 'lang'>): Doc {
   let d = docCache.get(key);
   if (!d) {
     d = buildDoc(text.content, lang?.rtl);
-    if (docCache.size > 20) docCache.delete(docCache.keys().next().value!);
+    if (docCache.size > 40) docCache.delete(docCache.keys().next().value!);
     docCache.set(key, d);
   }
   return d;

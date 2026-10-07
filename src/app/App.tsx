@@ -1,8 +1,9 @@
-import { BookOpen, FlaskConical, Library, ScrollText, Settings } from 'lucide-react';
+import { BookA, BookOpen, Cloud, Coffee, Contrast, FlaskConical, Library, Moon, ScrollText, Settings, Sun } from 'lucide-react';
 import { Component, useEffect, useState, type ReactNode } from 'react';
-import { initStore, merge, useStore } from '../data/store';
+import { getRec, initStore, merge, useStore } from '../data/store';
 import { decodeShare } from '../data/share';
 import { countBundle } from '../data/merge';
+import { LexiconView } from '../lexicon/LexiconView';
 import { LibraryView } from '../library/LibraryView';
 import { PlaygroundView } from '../library/PlaygroundView';
 import { PromptsView } from '../prompts/PromptsView';
@@ -10,11 +11,12 @@ import { ReaderView } from '../reader/ReaderView';
 import { SettingsView } from '../settings/SettingsView';
 import { Dock } from '../sheet/Dock';
 import { Sheet } from '../sheet/Sheet';
-import { startSync } from '../sync/cloud';
+import { startSync, useSync } from '../sync/cloud';
 import { ContextMenu, Dialogs, Toasts } from '../ui/Modal';
+import { ModelPicker } from '../ui/ModelPicker';
 import { go, useRoute, type Route } from './router';
-import { useSettings } from './settings';
-import { confirmDialog, toast } from './ui';
+import { setSetting, useSettings, type Theme } from './settings';
+import { confirmDialog, toast, useUI } from './ui';
 
 export function App() {
   const ready = useStore((s) => s.ready);
@@ -59,7 +61,9 @@ export function App() {
 function View({ route }: { route: Route }) {
   switch (route.view) {
     case 'read':
-      return <ReaderView textId={route.id} />;
+      return <ReaderView textId={route.id} at={route.at} />;
+    case 'lexicon':
+      return <LexiconView lang={route.lang} word={route.word} />;
     case 'play':
       return <PlaygroundView />;
     case 'prompts':
@@ -74,14 +78,18 @@ function View({ route }: { route: Route }) {
 const NAV: [Route['view'], string, string, typeof Library][] = [
   ['library', '/', 'Library', Library],
   ['read', '', 'Reader', BookOpen],
+  ['lexicon', '/lexicon', 'Lexicon', BookA],
   ['play', '/play', 'Playground', FlaskConical],
   ['prompts', '/prompts', 'Prompts', ScrollText],
   ['settings', '/settings', 'Settings', Settings],
 ];
+// phones: five tabs; Settings sits in the top bar
+const PHONE_NAV = NAV.filter(([v]) => v !== 'settings');
 
-function lastRead(): string | null {
+export function lastRead(): string | null {
   try {
-    return localStorage.getItem('logosnovus.lastText');
+    const id = localStorage.getItem('logosnovus.lastText');
+    return id && getRec('texts', id) ? id : null;
   } catch {
     return null;
   }
@@ -93,19 +101,71 @@ function navTarget(view: Route['view'], path: string) {
   return id ? `/read/${encodeURIComponent(id)}` : '/';
 }
 
+const THEMES: Theme[] = ['night', 'sepia', 'paper', 'ink'];
+const THEME_ICON: Record<Theme, typeof Moon> = { night: Moon, sepia: Coffee, paper: Sun, ink: Contrast };
+
+function ThemeButton() {
+  const theme = useSettings((s) => s.theme);
+  const I = THEME_ICON[theme];
+  const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+  return (
+    <button className="icon-btn" onClick={() => setSetting('theme', next)} title={`Theme: ${theme} (switch to ${next})`} aria-label="Switch theme">
+      <I size={18} />
+    </button>
+  );
+}
+
+/** Cloud status at a glance; opens the sync settings. */
+function SyncButton({ compact = false }: { compact?: boolean }) {
+  const { user, status, pending } = useSync();
+  const label = !user ? 'Sign in' : status === 'synced' ? 'Synced' : status === 'syncing' || status === 'connecting' ? 'Syncing' : status === 'offline' ? 'Offline' : status === 'error' ? 'Sync error' : 'Cloud';
+  const cls = !user ? '' : status === 'synced' ? ' ok' : status === 'error' ? ' err' : status === 'offline' ? ' off' : ' busy';
+  return (
+    <button className={`sync-btn${cls}${compact ? ' compact' : ''}`} onClick={() => go('/settings')} title={user ? `${user.email} · ${label}${pending ? ` · ${pending} to upload` : ''}` : 'Sign in with Google to sync your devices'}>
+      {user ? <span className="avatar">{(user.name || user.email || '?').slice(0, 1).toUpperCase()}</span> : <Cloud size={16} />}
+      {!compact && <span>{label}</span>}
+      {user && <i className="dot" />}
+    </button>
+  );
+}
+
 function TopBar({ route }: { route: Route }) {
+  // number keys switch pages (outside text fields)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest('input, textarea, select, [contenteditable]')) return;
+      if (useUI.getState().dialog || useUI.getState().menu) return;
+      const n = +e.key;
+      if (n >= 1 && n <= NAV.length) go(navTarget(NAV[n - 1][0], NAV[n - 1][1]));
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, []);
+  const title = NAV.find(([v]) => v === route.view)?.[2] ?? '';
   return (
     <header className="topbar">
-      <button className="brand" onClick={() => go('/')}>
-        Logos Novus
+      <button className="brand" onClick={() => go('/')} title="Library">
+        <span className="brand-mark">Λ</span>
+        <span className="brand-name">Logos Novus</span>
       </button>
-      <nav>
-        {NAV.map(([view, path, label]) => (
-          <button key={view} className={route.view === view ? 'on' : ''} onClick={() => go(navTarget(view, path))}>
-            {label}
+      <span className="topbar-title">{title}</span>
+      <nav className="nav-pill">
+        {NAV.map(([view, path, label, Icon], i) => (
+          <button key={view} className={route.view === view ? 'on' : ''} onClick={() => go(navTarget(view, path))} title={`${label} (${i + 1})`}>
+            <Icon size={16} />
+            <span>{label}</span>
+            <span className="kbd">{i + 1}</span>
           </button>
         ))}
       </nav>
+      <div className="topbar-right">
+        <ModelPicker compact className="hide-tablet" />
+        <SyncButton />
+        <ThemeButton />
+        <button className="icon-btn phone-only" onClick={() => go('/settings')} aria-label="Settings">
+          <Settings size={19} />
+        </button>
+      </div>
     </header>
   );
 }
@@ -113,9 +173,11 @@ function TopBar({ route }: { route: Route }) {
 function BottomNav({ route }: { route: Route }) {
   return (
     <nav className="bottom-nav">
-      {NAV.map(([view, path, label, Icon]) => (
+      {PHONE_NAV.map(([view, path, label, Icon]) => (
         <button key={view} className={route.view === view ? 'on' : ''} onClick={() => go(navTarget(view, path))}>
-          <Icon size={20} />
+          <span className="bn-icon">
+            <Icon size={21} />
+          </span>
           <span>{label}</span>
         </button>
       ))}

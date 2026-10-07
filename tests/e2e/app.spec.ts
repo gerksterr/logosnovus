@@ -43,11 +43,12 @@ test('chat about a saved translation is stored on that version', async ({ page }
   await expect(page.locator('.chat .msg.user')).toHaveText('And in Luther?');
 });
 
-test('copy & paste models: prompt to clipboard, pasted answer is saved', async ({ page, context, browserName }) => {
+test('copy & paste models: per-text web assist, prompt to clipboard, pasted answer is saved', async ({ page, context, browserName }) => {
   test.skip(browserName !== 'chromium');
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/#/read/text-z');
-  await page.locator('.reader-bar select').selectOption({ label: 'Claude.ai (copy & paste) (copy & paste)' });
+  await page.locator('.lookup-row.word .lr-web').click(); // words of this text go through a chat site
+  await expect(page.locator('.lookup-row.word .mp-trigger')).toContainText('Claude.ai');
   await page.locator('.text .w', { hasText: /^Herzen$/ }).click();
   await expect(page.locator('.web-assist')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain("'Herzen'");
@@ -57,14 +58,27 @@ test('copy & paste models: prompt to clipboard, pasted answer is saved', async (
   await expect(page.locator('.text .w', { hasText: /^Herzen$/ })).toHaveClass(/\bk\b/);
 });
 
+test('model picker: readable list, switches the active model', async ({ page }) => {
+  await page.goto('/#/read/text-z');
+  const trigger = test.info().project.name === 'phone' ? page.locator('.lookup-row.passage .mp-trigger') : page.locator('.reader-bar .mp-trigger');
+  await trigger.click();
+  const pop = page.locator('.mp-pop');
+  await expect(pop.locator('.mp-group')).toHaveText([/API/, /Copy & paste/]);
+  await expect(pop.locator('.mp-row', { hasText: 'Claude.ai' })).not.toContainText('copy & paste'); // no duplicated suffix
+  const colors = await pop.locator('.mp-row-name').first().evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el.closest('.mp-pop')!).backgroundColor]);
+  expect(colors[0]).not.toEqual(colors[1]);
+  await pop.locator('.mp-row', { hasText: 'ChatGPT' }).click();
+  await expect(pop).toHaveCount(0);
+  await expect(trigger).toContainText('ChatGPT');
+});
+
 test('share link round trip merges into another browser', async ({ page, browser }) => {
   await page.goto('/#/');
-  await page.locator('.text-card', { hasText: 'Berakhot' }).locator('[aria-label="Text actions"]').click();
   await page.evaluate(() => {
     (window as any).__copied = '';
     navigator.clipboard.writeText = async (t: string) => void ((window as any).__copied = t);
   });
-  await page.locator('.menu >> text=Copy share link').click();
+  await page.locator('.text-card', { hasText: 'Berakhot' }).locator('[aria-label="Copy share link"]').click();
   await expect.poll(() => page.evaluate(() => (window as any).__copied)).toContain('#share=');
   const url: string = await page.evaluate(() => (window as any).__copied);
   const { viewport, isMobile, hasTouch, baseURL } = test.info().project.use;
@@ -79,7 +93,7 @@ test('share link round trip merges into another browser', async ({ page, browser
 test('custom library order: drag a text to the top', async ({ page }) => {
   test.skip(test.info().project.name !== 'desktop', 'pointer drag is exercised on desktop');
   await page.goto('/#/');
-  await page.locator('select').selectOption('custom');
+  await page.locator('.filters select').selectOption('custom');
   const titles = () => page.locator('.card-title').allInnerTexts();
   expect(await titles()).toEqual(['Berakhot 2a', 'Zarathustra Vorrede 5']);
   const handle = page.locator('.drag-handle').nth(1);
@@ -87,7 +101,7 @@ test('custom library order: drag a text to the top', async ({ page }) => {
   const top = (await page.locator('.text-card').first().boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width / 2, top.y + 5, { steps: 8 });
+  await page.mouse.move(top.x + 10, top.y + 10, { steps: 8 }); // cards sit side by side: drop on the first one's leading half
   await page.mouse.up();
   expect(await titles()).toEqual(['Zarathustra Vorrede 5', 'Berakhot 2a']);
   await page.reload();
@@ -104,4 +118,59 @@ test('works offline once loaded (service worker)', async ({ page, context }) => 
   await page.reload();
   await expect(page.locator('.text .w', { hasText: /^Volk$/ })).toBeVisible();
   await context.setOffline(false);
+});
+
+test('library: search inside texts, language filter, continue reading', async ({ page }) => {
+  await page.goto('/#/');
+  await page.locator('.filters .search input').fill('Ziegenhirten');
+  await expect(page.locator('.text-card')).toHaveCount(1);
+  await expect(page.locator('.card-title')).toHaveText('Zarathustra Vorrede 5');
+  await page.locator('.filters .search input').fill('');
+  await page.locator('.filters .chip', { hasText: 'Hebrew' }).click();
+  await expect(page.locator('.card-title')).toHaveText(['Berakhot 2a']);
+  // read a little, come back: the text is offered to continue
+  await page.setViewportSize({ width: 600, height: 400 });
+  await page.goto('/#/read/text-z');
+  await page.evaluate(() => scrollTo(0, 700));
+  await page.waitForTimeout(1500);
+  await page.goto('/#/');
+  await expect(page.locator('.cont-card')).toContainText('Zarathustra Vorrede 5');
+  await page.locator('.cont-card').click();
+  await expect(page).toHaveURL(/#\/read\/text-z$/);
+});
+
+test('lexicon: words with calque meaning and gloss; a context line opens the text at that word', async ({ page }) => {
+  await page.goto('/#/lexicon');
+  const item = page.locator('.lex-item', { hasText: 'Volk' });
+  await expect(item.locator('.lex-calque')).toHaveText('folk');
+  await expect(item.locator('.lex-gloss')).toContainText('the people.');
+  await item.locator('.lex-row').click();
+  await expect(item.locator('.kwic-row')).toHaveCount(1);
+  await item.locator('.kwic-row').click();
+  await expect(page).toHaveURL(/#\/read\/text-z\/\d+$/);
+  await expect(page.locator('.text .w.sel')).toHaveText('Volk');
+  await expect(page.locator('.text .w.sel')).toBeInViewport();
+});
+
+test('sheet: instant calque gloss, several models at once, compare versions', async ({ page }) => {
+  const requests = await mockOpenRouter(page, 300);
+  await setOpenRouterKey(page);
+  await page.goto('/#/read/text-z');
+  await page.locator('.text .w', { hasText: /^Volk$/ }).click();
+  await expect(page.locator('.sheet .sh-gloss')).toHaveText('folk'); // from the calque, no request
+  expect(requests).toHaveLength(0);
+  await page.locator('.sheet .sh-actions >> text=Several models').click();
+  const boxes = page.locator('.sheet .many-row input:not([disabled])');
+  const n = await boxes.count();
+  expect(n).toBeGreaterThanOrEqual(2);
+  for (let i = 0; i < n; i++) await boxes.nth(i).check();
+  await page.locator('.sheet .composer .btn.primary').click();
+  await expect(page.locator('.sheet .vchip.live').first()).toBeVisible();
+  await expect(page.locator('.sheet .vchip:not(.live)')).toHaveCount(n + 1);
+  expect(requests).toHaveLength(n);
+  if (test.info().project.name === 'desktop') {
+    await page.locator('.sheet .sh-actions >> text=Compare').click();
+    await expect(page.locator('.sheet .compare-col')).toHaveCount(2);
+    await expect(page.locator('.sheet.wide')).toBeVisible();
+  }
 });

@@ -13,13 +13,15 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
   const langs = languages();
   const [title, setTitle] = useState(text?.title ?? '');
   const [author, setAuthor] = useState(text?.author ?? '');
+  const [tags, setTags] = useState((text?.tags ?? []).join(', '));
+  const tagList = tags.split(/[,#]/).map((t) => t.trim()).filter(Boolean);
   const [lang, setLang] = useState(text?.lang ?? langs[0]?.id ?? '');
   const [content, setContent] = useState(text?.content ?? '');
   const [wordPrompt, setWordPrompt] = useState(text?.wordPromptId ?? '');
   const [passagePrompt, setPassagePrompt] = useState(text?.passagePromptId ?? '');
   const dirty =
     title !== (text?.title ?? '') || author !== (text?.author ?? '') || content !== (text?.content ?? '') || lang !== (text?.lang ?? langs[0]?.id ?? '') ||
-    wordPrompt !== (text?.wordPromptId ?? '') || passagePrompt !== (text?.passagePromptId ?? '');
+    wordPrompt !== (text?.wordPromptId ?? '') || passagePrompt !== (text?.passagePromptId ?? '') || tagList.join(',') !== (text?.tags ?? []).join(',');
 
   const close = async () => {
     if (!dirty || (await confirmDialog('Discard your changes?', 'Discard'))) onClose();
@@ -30,6 +32,7 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
       ...(text ?? { id: uid('text'), createdAt: now }),
       title: title.trim() || content.trim().split('\n')[0].slice(0, 60) || 'Untitled',
       author: author.trim() || undefined,
+      tags: tagList.length ? [...new Set(tagList)] : undefined,
       lang,
       content,
       wordPromptId: wordPrompt || undefined,
@@ -80,6 +83,10 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
         <label className="field grow">
           <span>Author</span>
           <input className="input" value={author} onChange={(e) => setAuthor(e.target.value)} />
+        </label>
+        <label className="field grow">
+          <span>Tags</span>
+          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="e.g. Red Book, Jung" />
         </label>
       </div>
       <div className="row">

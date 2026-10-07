@@ -56,12 +56,12 @@ Give its literal meaning, its composition (stem, prefixes, suffixes), its etymol
 
 export const DEFAULT_MODELS: Model[] = [
   { id: 'm-openrouter-auto', name: 'OpenRouter auto-router', provider: 'openrouter', model: 'openrouter/auto', ...seed },
-  { id: 'm-gemini-flash', name: 'Gemini Flash (Google API key)', provider: 'gemini', model: 'gemini-flash-latest', ...seed },
-  { id: 'm-web-claude', name: 'Claude.ai (copy & paste)', provider: 'web', model: 'Claude.ai', siteUrl: 'https://claude.ai/new', ...seed },
-  { id: 'm-web-chatgpt', name: 'ChatGPT (copy & paste)', provider: 'web', model: 'ChatGPT', siteUrl: 'https://chatgpt.com/', ...seed },
+  { id: 'm-gemini-flash', name: 'Gemini Flash', provider: 'gemini', model: 'gemini-flash-latest', ...seed },
+  { id: 'm-web-claude', name: 'Claude.ai', provider: 'web', model: 'Claude.ai', siteUrl: 'https://claude.ai/new', ...seed },
+  { id: 'm-web-chatgpt', name: 'ChatGPT', provider: 'web', model: 'ChatGPT', siteUrl: 'https://chatgpt.com/', ...seed },
   {
     id: 'm-web-aistudio',
-    name: 'Google AI Studio (copy & paste)',
+    name: 'Google AI Studio',
     provider: 'web',
     model: 'AI Studio',
     siteUrl: 'https://aistudio.google.com/prompts/new_chat',

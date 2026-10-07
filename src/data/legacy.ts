@@ -101,6 +101,7 @@ export function convertLegacy(old: Any, opts: { includeKeys: boolean }): LegacyR
       id: t.id,
       title: t.title || 'Untitled',
       author: t.author || undefined,
+      tags: Array.isArray(t.tags) && t.tags.length ? t.tags.map(String) : undefined,
       lang,
       content: t.content,
       createdAt: time(t.createdAt),

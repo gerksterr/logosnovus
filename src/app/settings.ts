@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 
 export type Theme = 'night' | 'ink' | 'sepia' | 'paper';
-export type LibrarySort = 'added' | 'added-asc' | 'title' | 'recent' | 'custom';
+export type LibrarySort = 'added' | 'added-asc' | 'title' | 'read' | 'recent' | 'custom';
 
 export interface DeviceSettings {
   theme: Theme;
@@ -17,6 +17,7 @@ export interface DeviceSettings {
   minimap: boolean;
   mirrorBar: boolean; // floating mode bar on desktop (always on for touch)
   sort: LibrarySort;
+  libraryView: 'grid' | 'list';
 }
 
 const DEFAULTS: DeviceSettings = {
@@ -31,6 +32,7 @@ const DEFAULTS: DeviceSettings = {
   minimap: true,
   mirrorBar: false,
   sort: 'added',
+  libraryView: 'grid',
 };
 
 const KEY = 'logosnovus.settings';

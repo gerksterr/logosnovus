@@ -7,7 +7,7 @@ import { calquePromptText, runningFor, saveCalque, startCalque, stopQuery, useQu
 import { activeModel, modelLabel, prepare } from '../llm/run';
 import type { Calque, Text } from '../model/types';
 import { Modal } from '../ui/Modal';
-import { ModelSwitch } from '../ui/ModelSwitch';
+import { ModelPicker } from '../ui/ModelPicker';
 
 type Tab = 'generate' | 'paste' | 'versions' | 'align';
 
@@ -99,7 +99,7 @@ function Generate({ text, onDone }: { text: Text; onDone: () => void }) {
         </label>
         <label className="field grow">
           <span>Model</span>
-          <ModelSwitch value={modelId} onChange={setModelId} />
+          <ModelPicker value={modelId} onChange={setModelId} />
         </label>
         <label className="field" style={{ width: 130 }}>
           <span>Max tokens</span>
@@ -107,7 +107,7 @@ function Generate({ text, onDone }: { text: Text; onDone: () => void }) {
         </label>
       </div>
       <details className="raw">
-        <summary>Request JSON {body != null && <span className="chip">edited</span>}</summary>
+        <summary>Request JSON {body != null && <span className="badge">edited</span>}</summary>
         <textarea className="input code" rows={12} spellCheck={false} value={body ?? generated} onChange={(e) => setBody(e.target.value)} />
         {body != null && (
           <button className="btn small ghost" onClick={() => setBody(null)}>
@@ -186,7 +186,7 @@ function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
           <div className="grow">
             <div>
               {new Date(c.createdAt).toLocaleString()} · {SOURCE_LABEL[c.source]}
-              {c.id === text.calqueId && <span className="chip">in use</span>}
+              {c.id === text.calqueId && <span className="badge">in use</span>}
             </div>
             <div className="small muted">
               {[c.model, c.promptName, `${c.slots.filter(Boolean).length} words`].filter(Boolean).join(' · ')}

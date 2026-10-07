@@ -29,13 +29,16 @@ whose text was edited afterwards are kept and listed as “not found in text”.
 
 | Do this | to |
 | --- | --- |
-| Tap a word | open its saved translations, or ask the active model |
+| Tap a word | open its saved translations (with the calque's word-for-word meaning at the top), or ask |
 | Select a passage → *Translate passage* | ask about a passage (exact re-selections open the saved one) |
 | Tap inside a framed passage (also between its lines) | open that passage |
+| Header card above the text | choose this text's word / passage prompt and model (e.g. passages through Claude.ai, words through an API), read aloud, notes |
+| *Several models* in a translation | ask several models at once; *Compare* puts two versions side by side |
+| Lexicon (`3`) | every word you looked up in a language: gloss, calque meaning, versions, and each place it occurs in your texts |
 | Right-click (desktop) / *More* (phone) | dictionary, speak, web chat, keep-original, replace mirror text |
 | `M` / `O` / `I` or the mode bar | mirror ⇄ aligned original, original, interlinear |
+| `1`–`6` | switch pages (Library, Reader, Lexicon, Playground, Prompts, Settings) |
 | Layers icon | generate, paste, version and fix calques |
-| Notebook icon | every translation in this text |
 
 Text markup: `[Red]D[/Red]ie`, `[Blue]…[/Blue]`, `[hang:3][Red]D[/Red][/hang]ie`
 (a drop cap over 3 lines). Other brackets (`[RP: …]`, `[1]`) are shown dimmed.

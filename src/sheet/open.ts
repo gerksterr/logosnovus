@@ -6,7 +6,7 @@ import { useSettings } from '../app/settings';
 import { useUI } from '../app/ui';
 import { docFor, sentenceAround, targetKey, versionsFor, type Target } from '../data/selectors';
 import { getRec } from '../data/store';
-import { markSeen, runningFor, startLookup, useQueries } from '../llm/queries';
+import { markSeen, planLookup, runningFor, startLookup, useQueries } from '../llm/queries';
 import type { Composite } from '../calque/composites';
 import { compositeQuery } from '../calque/composites';
 import type { Doc } from '../text/document';
@@ -32,7 +32,7 @@ export function openTarget(target: Target, opts: { fresh?: boolean; dict?: boole
     return;
   }
   const queryId = startLookup(target, { promptId: opts.promptId, modelId: opts.modelId });
-  useUI.setState({ sheet: { target, queryId: queryId ?? undefined, mode: queryId ? 'view' : 'web', modelId: opts.modelId } });
+  useUI.setState({ sheet: { target, queryId: queryId ?? undefined, mode: queryId ? 'view' : 'web', modelId: queryId ? undefined : planLookup(target, opts.promptId, opts.modelId).model?.id } });
 }
 
 export function wordTarget(textId: string, doc: Doc, wi: number): Target | null {
