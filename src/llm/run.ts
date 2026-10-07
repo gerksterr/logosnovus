@@ -36,8 +36,9 @@ export function activeModel(): Model | undefined {
   return models.find(hasKey) ?? models.find((m) => m.id === 'm-web-claude') ?? models.find((m) => m.provider === 'web') ?? models[0];
 }
 
+/** Display name (older seeds carried a "(copy & paste)" suffix; the picker shows a badge instead). */
 export function modelLabel(m?: Model): string {
-  return m ? m.name || m.model : 'no model';
+  return m ? (m.name || m.model).replace(/\s*\((copy & paste|Google API key)\)$/, '') : 'no model';
 }
 
 export interface RunResult extends StreamResult {

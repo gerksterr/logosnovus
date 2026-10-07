@@ -85,6 +85,7 @@ test('passages: one contiguous outline, line gaps count as inside', async ({ pag
   await page.keyboard.press('Escape');
   const para = page.locator('.text .para').nth(2);
   await expect(para.locator('.pl path')).toHaveCount(1);
+  await para.evaluate((p) => p.scrollIntoView({ block: 'center' }));
   const gap = await para.evaluate((p) => {
     const r = p.getBoundingClientRect();
     return { x: r.left + r.width / 3, y: r.top + parseFloat(getComputedStyle(p).lineHeight) };
@@ -138,7 +139,8 @@ test('reading position survives a reload (line precise)', async ({ page }) => {
       const bar = document.querySelector('.reader-bar')!.getBoundingClientRect().bottom;
       return [...document.querySelectorAll('.text .w')].find((w) => w.getBoundingClientRect().top >= bar)?.textContent;
     });
-  await page.evaluate(() => scrollTo(0, 420));
+  // well into the text (the header card sits above it)
+  await page.evaluate(() => scrollTo(0, (document.querySelector('.text') as HTMLElement).getBoundingClientRect().top + scrollY + 420));
   await page.waitForTimeout(1500);
   const before = await firstWord();
   await page.reload();

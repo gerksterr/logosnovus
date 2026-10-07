@@ -67,7 +67,7 @@ function Prompts() {
                     <div>{p.name}</div>
                     <div className="small faint clamp">{p.template.replace(/\s+/g, ' ').slice(0, 140)}</div>
                   </div>
-                  <span className="chip">{getRec('langs', p.lang)?.name ?? 'any language'}</span>
+                  <span className="badge">{getRec('langs', p.lang)?.name ?? 'any language'}</span>
                 </button>
               ))}
           </div>
@@ -355,7 +355,7 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
             </label>
           </div>
           <details className="raw" open={!!m.body}>
-            <summary>Request body template {m.body && <span className="chip">custom</span>}</summary>
+            <summary>Request body template {m.body && <span className="badge">custom</span>}</summary>
             <p className="small faint">
               JSON sent to the API. Placeholders become JSON values; fields that end up null are dropped. Add anything the API accepts, e.g. OpenRouter{' '}
               <code>"reasoning": {'{'} "effort": "low" {'}'}</code> to speed up thinking models.
@@ -363,7 +363,7 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
             <textarea className="input code" rows={12} spellCheck={false} value={m.body ?? (format === 'web' ? '' : DEFAULT_BODIES[format])} onChange={(e) => set({ body: e.target.value })} />
             <div className="row small faint">
               {Object.entries(PLACEHOLDER_HELP).map(([k, v]) => (
-                <span key={k} className="chip" title={v}>{`{${k}}`}</span>
+                <span key={k} className="badge mono" title={v}>{`{${k}}`}</span>
               ))}
               {m.body && (
                 <button className="btn small ghost" onClick={() => set({ body: undefined })}>
@@ -457,7 +457,7 @@ function Languages() {
           .map((l) => (
             <button key={l.id} className="list-row" onClick={() => setEdit(l)}>
               <div className="grow">
-                {l.name} {l.rtl && <span className="chip">right-to-left</span>}
+                {l.name} {l.rtl && <span className="badge">right-to-left</span>}
               </div>
               <span className="small faint">{used(l.id)} texts</span>
             </button>

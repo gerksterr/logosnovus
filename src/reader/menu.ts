@@ -7,6 +7,7 @@ import { versionsFor } from '../data/selectors';
 import { wordKey } from '../text/document';
 import { compositeTarget, openTarget, openTranslation, passageTarget, wordTarget } from '../sheet/open';
 import type { HitShape } from './PassageLayer';
+import { speak } from './speech';
 import type { ReaderData } from './useReader';
 
 export interface MenuContext {
@@ -14,16 +15,6 @@ export interface MenuContext {
   chunk?: number;
   range?: [number, number]; // selected plain range (snapped)
   passage?: HitShape | null; // innermost saved passage at the pointer
-}
-
-const SPEECH_LANG: Record<string, string> = { grc: 'el-GR', arc: 'he-IL', la: 'it-IT' };
-
-export function speak(text: string, code?: string) {
-  if (!('speechSynthesis' in window)) return;
-  const u = new SpeechSynthesisUtterance(text);
-  if (code) u.lang = SPEECH_LANG[code] ?? code;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
 }
 
 function setReading(textId: string, change: (r: { keep: number[]; keepWords: string[]; replace: { start: number; end: number; text: string }[] }) => void) {

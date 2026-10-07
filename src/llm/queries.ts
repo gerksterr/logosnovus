@@ -39,6 +39,8 @@ const update = (id: string, changes: Partial<Query>) =>
   useQueries.setState((s) => ({ queries: s.queries.map((q) => (q.id === id ? { ...q, ...changes } : q)) }));
 export const getQuery = (id: string) => useQueries.getState().queries.find((q) => q.id === id);
 export const runningFor = (key: string) => useQueries.getState().queries.find((q) => q.key === key && q.status === 'running');
+/** Queries for a target: its main request plus parallel lanes (one per extra model). */
+export const isFor = (q: Query, key: string) => q.key === key || q.key.startsWith(`${key}#`);
 
 /** Streams into the query, batching UI updates to ~16/s. */
 async function execute(q: Query, model: Model, turns: Turn[], bodyOverride?: string): Promise<RunResult | null> {
@@ -106,7 +108,8 @@ export interface LookupPlan {
 export function planLookup(target: Target, promptId?: string, modelId?: string): LookupPlan {
   const textRec = getRec('texts', target.textId);
   const prompt = getRec('prompts', promptId) ?? defaultPrompt(target.kind, textRec, target.lang);
-  const model = getRec('models', modelId) ?? activeModel();
+  const textModel = getRec('models', target.kind === 'word' ? textRec?.wordModelId : textRec?.passageModelId);
+  const model = getRec('models', modelId) ?? textModel ?? activeModel();
   const doc = textRec ? docFor(textRec) : null;
   const sentence = target.sentence ?? (doc && target.anchor ? sentenceAround(doc, target.anchor[0], target.anchor[1]) : undefined);
   const text = fillPrompt(prompt?.template ?? (target.kind === 'word' ? 'Explain the word: {word}' : 'Interpret this passage: {text}'), {
@@ -120,13 +123,17 @@ export function planLookup(target: Target, promptId?: string, modelId?: string):
   return { prompt, model, text };
 }
 
-/** Starts (or joins) a lookup. Web-chat models return null: the sheet handles copy & paste. */
-export function startLookup(target: Target, opts: { promptId?: string; modelId?: string; promptText?: string; body?: string } = {}): string | null {
-  const key = targetKey(target);
-  const running = runningFor(key);
-  if (running) return running.id;
+/**
+ * Starts (or joins) a lookup. Web-chat models return null: the sheet handles
+ * copy & paste. `lane` runs it beside other requests for the same target
+ * (asking several models at once).
+ */
+export function startLookup(target: Target, opts: { promptId?: string; modelId?: string; promptText?: string; body?: string; lane?: boolean } = {}): string | null {
   const plan = planLookup(target, opts.promptId, opts.modelId);
   const model = plan.model;
+  const key = opts.lane && model ? `${targetKey(target)}#${model.id}` : targetKey(target);
+  const running = runningFor(key);
+  if (running) return running.id;
   if (!model || model.provider === 'web') return null;
   const promptText = opts.promptText ?? plan.text;
   const turns: Turn[] = [...(plan.prompt?.system ? [{ role: 'system' as const, content: plan.prompt.system }] : []), { role: 'user', content: promptText }];

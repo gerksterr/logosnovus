@@ -22,8 +22,11 @@ export interface Text extends Rec {
   lang: Id;
   content: string; // may contain [Red]…[/Red], [hang:n]…[/hang]
   createdAt: number;
+  tags?: string[];
   wordPromptId?: Id;
   passagePromptId?: Id;
+  wordModelId?: Id; // per-text model for word lookups (default: the active model)
+  passageModelId?: Id; // e.g. passages through a web chat, words through an API
   calqueId?: Id; // active calque
   rank?: number; // custom library order; set only once moved by hand
   scratch?: boolean; // the Playground text (hidden from the library)

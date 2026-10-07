@@ -1,17 +1,15 @@
-import { Cloud, Download, ExternalLink, Link2, Upload } from 'lucide-react';
+import { Cloud, Download, ExternalLink, Link2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { go } from '../app/router';
 import { confirmDialog, toast } from '../app/ui';
 import { wipe } from '../data/db';
-import { convertLegacy, convertLegacyChats, isLegacyBackup, isLegacyChats } from '../data/legacy';
-import { countBundle, isBackup, makeBackup, type Bundle } from '../data/merge';
 import { encodeShare, shareUrl } from '../data/share';
-import { alive, flush, merge, put, remove, useStore } from '../data/store';
+import { alive, flush, put, remove, useStore } from '../data/store';
 import { BUILTIN_PROVIDERS } from '../llm/providers';
-import { STORE_NAMES, type Rec, type StoreName } from '../model/types';
 import { importLegacyCloud, signIn, signOut, syncNow, useSync } from '../sync/cloud';
-import { Modal } from '../ui/Modal';
+import { STORE_NAMES, type Rec } from '../model/types';
+import { allRecords, exportBackup, ImportButton } from './Backup';
 
 export function SettingsView() {
   return (
@@ -153,74 +151,21 @@ function Sync() {
   );
 }
 
-function download(name: string, text: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
-
-function allRecords(includeKeys: boolean): Bundle {
-  const s = useStore.getState();
-  const out: Bundle = {};
-  for (const st of STORE_NAMES) {
-    if (st === 'secrets' && !includeKeys) continue;
-    (out as Record<StoreName, Rec[]>)[st] = alive(s[st] as Record<string, Rec>).filter((r) => st !== 'texts' || !(r as { scratch?: boolean }).scratch);
-  }
-  return out;
-}
-
 function Data() {
   const [keys, setKeys] = useState(false);
-  const [pending, setPending] = useState<{ bundle: Bundle; note: string; keys: { provider: string; masked: string }[]; legacy?: unknown } | null>(null);
-  const [importKeys, setImportKeys] = useState(false);
-
-  const exportAll = () => {
-    const json = JSON.stringify(makeBackup(allRecords(keys)));
-    download(`logosnovus-backup-${new Date().toISOString().slice(0, 10)}.json`, json);
-  };
   const shareAll = async () => {
     const url = shareUrl(await encodeShare(allRecords(false)));
     await navigator.clipboard.writeText(url);
     toast(`Library link copied (${Math.round(url.length / 1024)} KB). Very long links may be cut by some messengers — a backup file always works.`, 'info', 8000);
   };
-  const onFile = async (f: File) => {
-    try {
-      const data = JSON.parse(await f.text());
-      if (isBackup(data)) setPending({ bundle: data.records, note: 'Logos Novus backup', keys: (data.records.secrets ?? []).map((s) => ({ provider: s.id, masked: '••••' })) });
-      else if (isLegacyBackup(data)) {
-        const r = convertLegacy(data, { includeKeys: false });
-        setPending({ bundle: r.bundle, note: `Backup from the previous app (Symbolic Text Decipher)${r.unanchored ? ` · ${r.unanchored} passages are no longer found in their texts and will be listed as “not found”` : ''}`, keys: r.keys, legacy: data });
-      } else if (isLegacyChats(data)) {
-        const t = convertLegacyChats(data, useStore.getState().translations);
-        setPending({ bundle: { translations: t }, note: 'Chats exported by the previous app', keys: [] });
-      } else toast('This file is not a backup I recognize.', 'error');
-    } catch (e) {
-      toast(`Could not read the file: ${(e as Error).message}`, 'error');
-    }
-  };
-  const confirmImport = () => {
-    if (!pending) return;
-    let bundle = pending.bundle;
-    if (pending.legacy && importKeys) bundle = convertLegacy(pending.legacy, { includeKeys: true }).bundle;
-    if (!importKeys) bundle = { ...bundle, secrets: [] };
-    const n = merge(bundle, 'import');
-    setPending(null);
-    toast(`Imported ${n} records. Existing newer versions were kept.`);
-  };
-
   return (
     <section className="section">
       <h2>Backup & sharing</h2>
       <div className="row">
-        <button className="btn" onClick={exportAll}>
+        <button className="btn" onClick={() => exportBackup(keys)}>
           <Download size={15} /> Export backup
         </button>
-        <label className="btn">
-          <Upload size={15} /> Import backup
-          <input type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-        </label>
+        <ImportButton />
         <button className="btn" onClick={() => shareAll().catch((e) => toast(String(e), 'error'))}>
           <Link2 size={15} /> Copy library link
         </button>
@@ -229,38 +174,6 @@ function Data() {
         <input type="checkbox" checked={keys} onChange={(e) => setKeys(e.target.checked)} /> Include API keys in the exported file
       </label>
       <p className="small faint">Imports and links merge into your library: nothing of yours is overwritten by an older copy. Old “Symbolic Text Decipher” backups import too.</p>
-      {pending && (
-        <Modal
-          title="Import"
-          onClose={() => setPending(null)}
-          footer={
-            <div className="row end">
-              <button className="btn ghost" onClick={() => setPending(null)}>
-                Cancel
-              </button>
-              <button className="btn primary" onClick={confirmImport}>
-                Import
-              </button>
-            </div>
-          }
-        >
-          <p>{pending.note}</p>
-          <ul className="small">
-            {Object.entries(countBundle(pending.bundle))
-              .filter(([k]) => k !== 'secrets')
-              .map(([k, n]) => (
-                <li key={k}>
-                  {n} {k}
-                </li>
-              ))}
-          </ul>
-          {pending.keys.length > 0 && (
-            <label className="check">
-              <input type="checkbox" checked={importKeys} onChange={(e) => setImportKeys(e.target.checked)} /> Also import API keys ({pending.keys.map((k) => `${k.provider} ${k.masked}`).join(', ')})
-            </label>
-          )}
-        </Modal>
-      )}
     </section>
   );
 }
