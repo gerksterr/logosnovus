@@ -180,11 +180,45 @@ export function chatTurns(tr: { prompt: string; content: string; chat?: ChatMsg[
   ];
 }
 
+/** The model a follow-up goes to: chosen, else the text's model for that kind (as for a new translation), else the active one. */
+export function chatModel(tr: Pick<Translation, 'kind' | 'textId'>, modelId?: string): Model | undefined {
+  const text = getRec('texts', tr.textId);
+  return getRec('models', modelId) ?? getRec('models', tr.kind === 'word' ? text?.wordModelId : text?.passageModelId) ?? activeModel();
+}
+
+/**
+ * A follow-up as one self-contained message for a chat website, which has not
+ * seen the conversation (unless it is continued in the same chat).
+ */
+export function chatPromptText(tr: Pick<Translation, 'prompt' | 'content' | 'chat'>, message: string, withContext = true): string {
+  if (!withContext) return message;
+  const turns = [
+    ['My question', tr.prompt],
+    ['Your answer', tr.content],
+    ...(tr.chat ?? []).map((m) => [m.role === 'user' ? 'My question' : 'Your answer', m.content]),
+  ];
+  return [
+    'This continues an earlier conversation:',
+    ...turns.map(([who, text]) => `--- ${who} ---\n${text.trim()}`),
+    `--- My follow-up question ---\n${message.trim()}`,
+  ].join('\n\n');
+}
+
+/** Stores a question and its pasted answer (copy & paste chats) on the translation. */
+export function saveChatExchange(id: string, message: string, answer: string, model: string) {
+  const cur = getRec('translations', id);
+  if (!cur) return;
+  const now = Date.now();
+  patch('translations', id, {
+    chat: [...(cur.chat ?? []), { role: 'user', content: message, at: now }, { role: 'assistant', content: answer, at: now, model }],
+  });
+}
+
 export function startChat(kind: 'translations' | 'calques', id: string, message: string, modelId?: string): string | null {
   const key = `chat|${id}`;
   if (runningFor(key)) return null;
   const rec = getRec(kind, id);
-  const model = getRec('models', modelId) ?? activeModel();
+  const model = kind === 'translations' && rec ? chatModel(rec as Translation, modelId) : (getRec('models', modelId) ?? activeModel());
   if (!rec || !model || model.provider === 'web') return null;
   const base =
     kind === 'translations'

@@ -58,6 +58,32 @@ test('copy & paste models: per-text web assist, prompt to clipboard, pasted answ
   await expect(page.locator('.text .w', { hasText: /^Herzen$/ })).toHaveClass(/\bk\b/);
 });
 
+test('copy & paste models: follow-up questions work like new translations', async ({ page, context, browserName }) => {
+  test.skip(browserName !== 'chromium');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/#/read/text-z');
+  await page.locator('.lookup-row.word .lr-web').click(); // this text's words go through a chat site
+  await page.locator('.text .w', { hasText: /^Volk$/ }).click();
+  await expect(page.locator('.chat-via')).toContainText('Claude.ai');
+  await page.locator('.chat textarea').fill('And in Luther?');
+  await page.locator('.chat [title^="Send"]').click();
+  const paste = page.locator('.chat .web-assist');
+  await expect(paste).toBeVisible();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toContain('**Volk**: the people.'); // the earlier answer travels along
+  expect(clip.trimEnd().endsWith('And in Luther?')).toBe(true);
+  await paste.locator('input[type=checkbox]').uncheck(); // continuing in the same chat: the question alone
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('And in Luther?');
+  await paste.locator('textarea').fill('Luther: **das Volk Gottes**.');
+  await paste.locator('text=Save answer').click();
+  await expect(paste).toHaveCount(0);
+  await expect(page.locator('.chat .msg.assistant .md strong')).toHaveText('das Volk Gottes');
+  await page.reload();
+  await page.locator('.text .w', { hasText: /^Volk$/ }).click();
+  await expect(page.locator('.chat .msg.user')).toHaveText('And in Luther?');
+  await expect(page.locator('.chat .msg-model')).toHaveText('Claude.ai');
+});
+
 test('model picker: readable list, switches the active model', async ({ page }) => {
   await page.goto('/#/read/text-z');
   const trigger = test.info().project.name === 'phone' ? page.locator('.lookup-row.passage .mp-trigger') : page.locator('.reader-bar .mp-trigger');
