@@ -3,6 +3,7 @@ import { DEFAULT_BODIES, BUILTIN_PROVIDERS } from './providers';
 import { buildRequest, fillTemplate, templateValues } from './request';
 import { readCompletion } from './stream';
 import { fillPrompt } from './run';
+import { chatPromptText } from './queries';
 import type { Model } from '../model/types';
 
 const model = (provider: string, extra: Partial<Model> = {}): Model => ({ id: 'm', name: '', provider, model: 'x/y', createdAt: 1, updatedAt: 1, ...extra });
@@ -98,5 +99,27 @@ describe('prompt filling', () => {
   it('fills word/text interchangeably plus context placeholders', () => {
     expect(fillPrompt("'{word}' in {title} ({language}): {sentence}", { text: 'Sein', title: 'Zarathustra', language: 'German', sentence: 'Das Sein.' }))
       .toBe("'Sein' in Zarathustra (German): Das Sein.");
+  });
+});
+
+describe('follow-ups through a chat website', () => {
+  const tr = {
+    prompt: "Brief etymology of 'Volk'.",
+    content: '**Volk**: the people.',
+    chat: [
+      { role: 'user' as const, content: 'And in Luther?', at: 1 },
+      { role: 'assistant' as const, content: 'Luther uses it for Israel.', at: 2 },
+    ],
+  };
+
+  it('carries the whole conversation, in order, ending with the new question', () => {
+    const p = chatPromptText(tr, '  And in Nietzsche? ');
+    const order = ["Brief etymology of 'Volk'.", '**Volk**: the people.', 'And in Luther?', 'Luther uses it for Israel.', 'And in Nietzsche?'].map((x) => p.indexOf(x));
+    expect(order.every((i, k) => i >= 0 && (k === 0 || i > order[k - 1]))).toBe(true);
+    expect(p.trimEnd().endsWith('--- My follow-up question ---\nAnd in Nietzsche?')).toBe(true);
+  });
+
+  it('can send the question alone (same chat continued)', () => {
+    expect(chatPromptText(tr, 'And in Nietzsche?', false)).toBe('And in Nietzsche?');
   });
 });

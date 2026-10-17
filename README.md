@@ -48,7 +48,8 @@ word), `{language}`, `{title}`, `{author}` — one prompt can serve several book
 
 Models: OpenRouter, Google Gemini API, Anthropic, OpenAI, Groq, any
 OpenAI/Gemini/Anthropic-compatible endpoint (Ollama, LM Studio, DeepSeek…), or
-**copy & paste** through Claude.ai / ChatGPT / AI Studio with no key at all. Each
+**copy & paste** through Claude.ai / ChatGPT / AI Studio with no key at all — for new
+translations and follow-up questions alike. Each
 model's JSON request body is editable (e.g. add `"reasoning": {"effort": "low"}`).
 
 ## Deploying

@@ -1,4 +1,4 @@
-import { BookA, Bug, CircleAlert, Columns2, Copy, Cpu, ExternalLink, Globe, Layers, RefreshCw, SlidersHorizontal, Sparkles, Square, Trash2, Users, Volume2, X } from 'lucide-react';
+import { BookA, Bug, CircleAlert, Columns2, Copy, Cpu, Globe, Layers, RefreshCw, SlidersHorizontal, Sparkles, Square, Trash2, Users, Volume2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { go, useBackClose } from '../app/router';
@@ -14,8 +14,9 @@ import { speak } from '../reader/speech';
 import { wordKey } from '../text/document';
 import { Markdown } from '../ui/Markdown';
 import { hasKey, ModelPicker, providerName } from '../ui/ModelPicker';
-import { Chat } from './Chat';
+import { Chat, firstWeb } from './Chat';
 import { Dictionary } from './Dictionary';
+import { WebPaste } from './WebPaste';
 
 export function Sheet() {
   const sheet = useUI((s) => s.sheet);
@@ -554,69 +555,23 @@ function Debug({ query, version }: { query?: Query; version?: Translation }) {
   );
 }
 
-/** Copy & paste through a chat website (Claude.ai, ChatGPT, AI Studio…) — no API key needed. */
+/** New translation through a chat website (copy & paste). */
 function WebAssist({ sheet, onSaved }: { sheet: SheetState; onSaved: (id: string) => void }) {
   const { target } = sheet;
   const models = useStore((s) => s.models);
-  const webModels = alive(models).filter((m) => m.provider === 'web');
-  const active = activeModel();
-  const [modelId, setModelId] = useState((sheet.modelId && models[sheet.modelId]?.provider === 'web' ? sheet.modelId : active?.provider === 'web' ? active.id : webModels[0]?.id) ?? '');
+  const [modelId, setModelId] = useState(() => firstWeb(sheet.modelId, models));
   const plan = planLookup(target, undefined, modelId);
-  const [answer, setAnswer] = useState('');
-  const model = getRec('models', modelId);
-  useEffect(() => {
-    navigator.clipboard?.writeText(plan.text).catch(() => {});
-  }, [plan.text]);
-  const save = () => {
-    const t = saveTranslation(target, { prompt: plan.text, promptName: plan.prompt?.name, model: model ? modelLabel(model) : 'web chat', provider: 'web', content: answer.trim() });
-    onSaved(t.id);
-  };
   return (
-    <div className="web-assist">
-      <div className="wa-steps">
-        <div className="wa-step">
-          <span className="wa-n">1</span> The prompt is on your clipboard{plan.prompt ? ` (${plan.prompt.name})` : ''}.
-        </div>
-        <div className="wa-step">
-          <span className="wa-n">2</span> Paste it into the chat, then copy the answer.
-        </div>
-        <div className="wa-step">
-          <span className="wa-n">3</span> Paste the answer below and save it as a version.
-        </div>
-      </div>
-      <div className="row">
-        <ModelPicker value={modelId} onChange={setModelId} only="web" />
-        <button className="btn" onClick={() => navigator.clipboard.writeText(plan.text).then(() => toast('Prompt copied.'))}>
-          <Copy size={14} /> Copy prompt
-        </button>
-        {model?.siteUrl && (
-          <a className="btn violet" href={model.siteUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink size={14} /> Open {model.model}
-          </a>
-        )}
-      </div>
-      <details className="raw">
-        <summary>Prompt</summary>
-        <pre>{plan.text}</pre>
-      </details>
-      <textarea className="input" rows={8} placeholder="Paste the answer here" value={answer} onChange={(e) => setAnswer(e.target.value)} />
-      <div className="row end">
-        <button
-          className="btn ghost"
-          onClick={() =>
-            navigator.clipboard
-              .readText()
-              .then(setAnswer)
-              .catch(() => toast('Clipboard access was blocked; paste manually.', 'error'))
-          }
-        >
-          Paste from clipboard
-        </button>
-        <button className="btn primary" disabled={!answer.trim()} onClick={save}>
-          Save translation
-        </button>
-      </div>
-      {answer.trim() && <Markdown text={answer} />}
-    </div>
+    <WebPaste
+      prompt={plan.text}
+      note={plan.prompt?.name}
+      modelId={modelId}
+      onModel={setModelId}
+      saveLabel="Save translation"
+      onSave={(answer, model) => {
+        const t = saveTranslation(target, { prompt: plan.text, promptName: plan.prompt?.name, model: model ? modelLabel(model) : 'web chat', provider: 'web', content: answer });
+        onSaved(t.id);
+      }}
+    />
   );
 }
