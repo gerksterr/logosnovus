@@ -14,6 +14,8 @@ import { speak } from '../reader/speech';
 import { wordKey } from '../text/document';
 import { Markdown } from '../ui/Markdown';
 import { hasKey, ModelPicker, providerName } from '../ui/ModelPicker';
+import { useBridge } from '../llm/bridge';
+import { BridgeSteps } from './BridgeBar';
 import { Chat, firstWeb } from './Chat';
 import { Dictionary } from './Dictionary';
 import { WebPaste } from './WebPaste';
@@ -337,13 +339,14 @@ function Reasoning({ text, live }: { text: string; live?: boolean }) {
 
 function LiveQuery({ q, onRetry, debug, onDebug }: { q: Query; onRetry: () => void; debug: boolean; onDebug: () => void }) {
   const secs = Math.round((Date.now() - q.startedAt) / 1000);
+  const waiting = useBridge((s) => s.jobs.length);
   return (
     <div className="live">
       <div className="sh-meta">
         <span className="badge cyan">
           <Cpu size={11} /> {q.model}
         </span>
-        {q.status === 'running' && <span className="small faint">streaming…</span>}
+        {q.status === 'running' && <span className="small faint">{q.bridge ? 'waiting for Claude (your account)…' : 'streaming…'}</span>}
         <span className="tools">
           <button className={`icon-btn${debug ? ' on' : ''}`} onClick={onDebug} title="Raw request and response">
             <Bug size={15} />
@@ -353,6 +356,8 @@ function LiveQuery({ q, onRetry, debug, onDebug }: { q: Query; onRetry: () => vo
       <Reasoning text={q.reasoning} live={q.status === 'running' && !q.content} />
       {q.content ? (
         <Markdown text={q.content} />
+      ) : q.status === 'running' && q.bridge ? (
+        <BridgeSteps count={waiting} />
       ) : q.status === 'running' ? (
         <div className="row muted small">
           <span className="spin" /> {q.reasoning ? 'The model is reasoning…' : `Waiting for ${q.model}…`} {secs > 3 ? `${secs}s` : ''}
@@ -511,7 +516,7 @@ function Composer({ sheet, onSend }: { sheet: SheetState; onSend: (o: { promptId
         <ModelPicker value={modelId} onChange={setModelId} />
       </div>
       <textarea className="input" rows={5} value={text} onChange={(e) => setText(e.target.value)} aria-label="Prompt text" />
-      {model?.provider !== 'web' && (
+      {model?.provider !== 'web' && model?.provider !== 'claude' && (
         <details className="raw">
           <summary>Request JSON {body != null && <span className="badge">edited</span>}</summary>
           <textarea className="input code" rows={10} spellCheck={false} value={body ?? generated} onChange={(e) => setBody(e.target.value)} />

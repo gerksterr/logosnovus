@@ -5,7 +5,9 @@ import { Check, CircleAlert, X } from 'lucide-react';
 import { useUI } from '../app/ui';
 import { go } from '../app/router';
 import { targetKey } from '../data/selectors';
+import { useBridge } from '../llm/bridge';
 import { dismissQuery, isFor, useQueries } from '../llm/queries';
+import { BridgeBar } from './BridgeBar';
 
 export function Dock() {
   const queries = useQueries((s) => s.queries);
@@ -13,9 +15,11 @@ export function Dock() {
   const sheetKey = sheetTarget ? targetKey(sheetTarget) : null;
   // requests for the target in the open sheet are shown there
   const visible = queries.filter((q) => q.kind !== 'chat' && !(sheetKey && isFor(q, sheetKey)) && (q.status === 'running' || (!q.seen && q.status !== 'stopped')));
-  if (!visible.length) return null;
+  const waiting = useBridge((s) => s.jobs.length);
+  if (!visible.length && !waiting) return null;
   return (
     <div className="dock" aria-label="Requests">
+      <BridgeBar />
       {visible.map((q) => (
         <div key={q.id} className={`dock-item ${q.status}`}>
           <button

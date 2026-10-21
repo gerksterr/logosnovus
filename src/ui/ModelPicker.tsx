@@ -1,7 +1,7 @@
 // Readable model picker (replaces a native <select>, whose popup ignored the
 // theme on Windows). Desktop: dropdown under the button. Phones: bottom sheet.
 
-import { Check, ChevronDown, Cpu, Globe, Search, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Globe, Search, Settings2, Sparkles } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { go, useBackClose } from '../app/router';
@@ -11,14 +11,16 @@ import { activeModel, modelLabel } from '../llm/run';
 import type { Model } from '../model/types';
 
 export const isWeb = (m?: Model) => m?.provider === 'web';
+export const isBridge = (m?: Model) => m?.provider === 'claude';
 
 export function providerName(m: Model): string {
   if (isWeb(m)) return 'Web chat';
+  if (isBridge(m)) return 'claude.ai account';
   return resolveProvider(m.provider, useStore.getState().providers)?.name.replace(/^Google /, '') ?? m.provider;
 }
 
 export function hasKey(m: Model): boolean {
-  if (isWeb(m)) return true;
+  if (isWeb(m) || isBridge(m)) return true;
   const p = resolveProvider(m.provider, useStore.getState().providers);
   return !!p && (!!p.custom || !!getRec('secrets', p.id));
 }
@@ -29,6 +31,7 @@ export function setActiveModel(id: string) {
 }
 
 export function ModelIcon({ m, size = 15 }: { m?: Model; size?: number }) {
+  if (isBridge(m)) return <Sparkles size={size} className="mi claude" aria-hidden />;
   return isWeb(m) ? <Globe size={size} className="mi web" aria-hidden /> : <Cpu size={size} className="mi api" aria-hidden />;
 }
 
@@ -120,7 +123,8 @@ function ModelList({
     const list = models.filter((m) => !f || `${modelLabel(m)} ${m.model} ${providerName(m)}`.toLowerCase().includes(f));
     return list.sort((a, b) => Number(hasKey(b)) - Number(hasKey(a)) || modelLabel(a).localeCompare(modelLabel(b)));
   }, [models, q]);
-  const api = sorted.filter((m) => !isWeb(m));
+  const api = sorted.filter((m) => !isWeb(m) && !isBridge(m));
+  const bridge = sorted.filter(isBridge);
   const web = sorted.filter(isWeb);
 
   const row = (m: Model) => {
@@ -131,8 +135,8 @@ function ModelList({
         <span className="mp-row-main">
           <span className="mp-row-name">{modelLabel(m)}</span>
           <span className="mp-row-meta">
-            <span className={`badge ${isWeb(m) ? 'violet' : 'cyan'}`}>{providerName(m)}</span>
-            {!isWeb(m) && <span className="mono faint">{m.model}</span>}
+            <span className={`badge ${isWeb(m) ? 'violet' : isBridge(m) ? 'amber' : 'cyan'}`}>{providerName(m)}</span>
+            {!isWeb(m) && <span className="mono faint">{m.model}{m.effort ? ` · ${m.effort}` : ''}</span>}
             {m.temperature != null && <span className="faint small">t {m.temperature}</span>}
             {!ok && <span className="badge danger">no key</span>}
           </span>
@@ -165,6 +169,8 @@ function ModelList({
           )}
           {api.length > 0 && <div className="mp-group">API · answers stream in</div>}
           {api.map(row)}
+          {bridge.length > 0 && <div className="mp-group">Claude · your claude.ai account, no key (bridge)</div>}
+          {bridge.map(row)}
           {web.length > 0 && <div className="mp-group">Copy &amp; paste · your chat subscription, no key</div>}
           {web.map(row)}
           {!sorted.length && <div className="empty small">No model matches.</div>}

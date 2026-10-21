@@ -6,6 +6,7 @@ import { confirmDialog, toast } from '../app/ui';
 import { wipe } from '../data/db';
 import { encodeShare, shareUrl } from '../data/share';
 import { alive, flush, put, remove, useStore } from '../data/store';
+import { BRIDGE_URL, bridgeUrl } from '../llm/bridge';
 import { BUILTIN_PROVIDERS } from '../llm/providers';
 import { importLegacyCloud, signIn, signOut, syncNow, useSync } from '../sync/cloud';
 import { STORE_NAMES, type Rec } from '../model/types';
@@ -18,6 +19,7 @@ export function SettingsView() {
         <h1>Settings</h1>
       </div>
       <Keys />
+      <ClaudeBridge />
       <Sync />
       <Data />
       <Storage />
@@ -28,7 +30,7 @@ export function SettingsView() {
 function Keys() {
   const secrets = useStore((s) => s.secrets);
   const providers = useStore((s) => s.providers);
-  const list = [...BUILTIN_PROVIDERS.filter((p) => p.id !== 'web'), ...alive(providers).map((p) => ({ id: p.id, name: `${p.name} (custom)`, keyUrl: undefined }))];
+  const list = [...BUILTIN_PROVIDERS.filter((p) => p.id !== 'web' && p.id !== 'claude'), ...alive(providers).map((p) => ({ id: p.id, name: `${p.name} (custom)`, keyUrl: undefined }))];
   return (
     <section className="section">
       <h2>API keys</h2>
@@ -42,6 +44,37 @@ function Keys() {
         Free options: OpenRouter has free models (marked “free” in the model editor); Google AI Studio keys include a free Gemini tier. Copy & paste models (Claude.ai, ChatGPT,
         AI Studio) need no key at all. <button className="linkish" onClick={() => go('/prompts/models')}>Manage models →</button>
       </p>
+    </section>
+  );
+}
+
+/** Optional: answers from the user's own claude.ai account (no key). Nothing here is needed otherwise. */
+function ClaudeBridge() {
+  const prefs = useStore((s) => s.prefs.prefs);
+  const [url, setUrl] = useState(prefs?.bridgeUrl ?? '');
+  const save = (v: string) => put('prefs', { ...(prefs && !prefs.deleted ? prefs : {}), id: 'prefs', updatedAt: 0, bridgeUrl: v.trim() || undefined });
+  return (
+    <section className="section">
+      <h2>Claude with your claude.ai account</h2>
+      <p className="small faint">
+        Optional, for people with a Claude account: pick a “Claude” model (quick, default, complex or a specific model) and requests are answered on your own account through
+        the Claude bridge page, without an API key. Requests are collected; open the bridge, paste once, paste the answers back once.
+      </p>
+      <div className="row">
+        <a className="btn" href={bridgeUrl()} target="_blank" rel="noopener noreferrer">
+          <ExternalLink size={14} /> Open the Claude bridge
+        </a>
+        <label className="grow">
+          <input
+            className="input"
+            value={url}
+            placeholder={`Bridge address (default ${BRIDGE_URL})`}
+            onChange={(e) => setUrl(e.target.value)}
+            onBlur={() => save(url)}
+            aria-label="Claude bridge address"
+          />
+        </label>
+      </div>
     </section>
   );
 }

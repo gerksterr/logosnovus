@@ -4,6 +4,7 @@ import { go } from '../app/router';
 import { confirmDialog, toast } from '../app/ui';
 import { languages } from '../data/selectors';
 import { alive, getRec, put, remove, uid, useStore } from '../data/store';
+import { isTier, TIERS } from '../llm/bridge';
 import { BUILTIN_PROVIDERS, DEFAULT_BODIES, PLACEHOLDER_HELP, resolveProvider } from '../llm/providers';
 import { fillPrompt, modelLabel } from '../llm/run';
 import { testModel } from '../llm/queries';
@@ -233,6 +234,8 @@ function Models() {
   );
 }
 
+const CLAUDE_MODELS = ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5-20251001'];
+
 function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) {
   const providers = useStore((s) => s.providers);
   const models = useStore((s) => s.models);
@@ -249,7 +252,7 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
     for (const t of alive(translations)) if (t.provider === m.provider || t.provider === 'OpenRouter') t.model && !t.model.includes(' ') && out.add(t.model);
     return [...out];
   }, [models, translations, m.provider]);
-  const options = [...new Set([...history, ...catalog.map((c) => c.id)])];
+  const options = m.provider === 'claude' ? [...TIERS, ...CLAUDE_MODELS] : [...new Set([...history, ...catalog.map((c) => c.id)])];
   const info = catalog.find((c) => c.id === m.model);
 
   useEffect(() => setTest(''), [m.model, m.provider]);
@@ -319,7 +322,7 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
           </select>
         </label>
         <label className="field grow">
-          <span>{m.provider === 'web' ? 'Site name' : 'Model path'}</span>
+          <span>{m.provider === 'web' ? 'Site name' : m.provider === 'claude' ? 'Tier or model' : 'Model path'}</span>
           <input className="input" list="model-options" value={m.model} onChange={(e) => set({ model: e.target.value })} placeholder={m.provider === 'openrouter' ? 'e.g. anthropic/claude-opus-5.5' : ''} />
           <datalist id="model-options">
             {options.map((o) => (
@@ -337,7 +340,25 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
         <span>Display name (optional — defaults to the model path)</span>
         <input className="input" value={m.name} onChange={(e) => set({ name: e.target.value })} placeholder={m.model} />
       </label>
-      {m.provider === 'web' ? (
+      {m.provider === 'claude' ? (
+        <>
+          <p className="small muted">
+            Answers come from your own claude.ai account through the Claude bridge page — no API key. Requests are collected and sent together: open the bridge, paste once,
+            paste the answers back once. <b>quick</b> is fastest, <b>default</b> balanced, <b>complex</b> the most capable; or name a model (e.g. claude-opus-5-5).
+          </p>
+          {!isTier(m.model.trim()) && m.model.trim() && (
+            <label className="field">
+              <span>Effort</span>
+              <select className="input" value={m.effort ?? ''} onChange={(e) => set({ effort: (e.target.value || undefined) as Model['effort'] })}>
+                <option value="">Model default</option>
+                <option value="low">Low (faster)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High (thinks longest)</option>
+              </select>
+            </label>
+          )}
+        </>
+      ) : m.provider === 'web' ? (
         <label className="field">
           <span>Chat site URL</span>
           <input className="input" value={m.siteUrl ?? ''} onChange={(e) => set({ siteUrl: e.target.value })} placeholder="https://claude.ai/new" />
@@ -360,7 +381,7 @@ function ModelEditor({ model, onClose }: { model: Model; onClose: () => void }) 
               JSON sent to the API. Placeholders become JSON values; fields that end up null are dropped. Add anything the API accepts, e.g. OpenRouter{' '}
               <code>"reasoning": {'{'} "effort": "low" {'}'}</code> to speed up thinking models.
             </p>
-            <textarea className="input code" rows={12} spellCheck={false} value={m.body ?? (format === 'web' ? '' : DEFAULT_BODIES[format])} onChange={(e) => set({ body: e.target.value })} />
+            <textarea className="input code" rows={12} spellCheck={false} value={m.body ?? (format === 'web' || format === 'bridge' ? '' : DEFAULT_BODIES[format])} onChange={(e) => set({ body: e.target.value })} />
             <div className="row small faint">
               {Object.entries(PLACEHOLDER_HELP).map(([k, v]) => (
                 <span key={k} className="badge mono" title={v}>{`{${k}}`}</span>

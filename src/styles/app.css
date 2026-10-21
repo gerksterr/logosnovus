@@ -1370,3 +1370,38 @@ div.list-row {
   text-overflow: ellipsis;
   max-width: 110px;
 }
+
+/* ---- Claude bridge */
+.mi.claude {
+  color: var(--accent);
+}
+.bridge-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--violet-line);
+  border-radius: 14px;
+  background: var(--bg-2);
+  box-shadow: var(--shadow);
+  font-size: 13.5px;
+}
+.bridge-bar .bb-icon {
+  color: var(--violet);
+  flex: none;
+}
+.bridge-bar .bb-text {
+  white-space: nowrap;
+}
+.bridge-bar .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+.bridge-steps {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--violet-line);
+  border-radius: 12px;
+  background: var(--violet-soft);
+}

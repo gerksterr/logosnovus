@@ -43,7 +43,9 @@ export interface Prompt extends Rec {
   createdAt: number;
 }
 
-export type ApiFormat = 'openai' | 'gemini' | 'anthropic' | 'web';
+export type ApiFormat = 'openai' | 'gemini' | 'anthropic' | 'web' | 'bridge';
+/** Formats spoken over HTTP (web = copy & paste via a chat site, bridge = the Claude bridge artifact). */
+export type HttpFormat = Exclude<ApiFormat, 'web' | 'bridge'>;
 
 /** A user-defined endpoint (built-in providers live in llm/providers.ts). */
 export interface Provider extends Rec {
@@ -59,10 +61,11 @@ export interface Secret extends Rec {
 
 export interface Model extends Rec {
   name: string; // empty → the model path is shown
-  provider: Id; // built-in provider id, custom Provider id, or 'web'
-  model: string; // e.g. "anthropic/claude-opus-5.5"
+  provider: Id; // built-in provider id, custom Provider id, 'web' or 'claude' (bridge)
+  model: string; // e.g. "anthropic/claude-opus-5.5"; for 'claude': quick | default | complex | a model id
   temperature?: number;
   maxTokens?: number;
+  effort?: 'low' | 'medium' | 'high'; // Claude bridge with a specific model
   body?: string; // custom JSON body template; default comes from the provider format
   siteUrl?: string; // web assist: chat site to open
   createdAt: number;
@@ -117,6 +120,7 @@ export interface Prefs extends Rec {
   modelId?: Id; // active model
   compound?: boolean; // mirror view shows compound meanings instead of literal parts
   syncKeys?: boolean;
+  bridgeUrl?: string; // Claude bridge artifact (default: the published one)
 }
 
 export interface Stores {

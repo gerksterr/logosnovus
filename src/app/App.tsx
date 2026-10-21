@@ -9,6 +9,8 @@ import { PlaygroundView } from '../library/PlaygroundView';
 import { PromptsView } from '../prompts/PromptsView';
 import { ReaderView } from '../reader/ReaderView';
 import { SettingsView } from '../settings/SettingsView';
+import { loadBridgeJobs } from '../llm/bridge';
+import { useBridgeListeners } from '../sheet/BridgeBar';
 import { Dock } from '../sheet/Dock';
 import { Sheet } from '../sheet/Sheet';
 import { startSync, useSync } from '../sync/cloud';
@@ -20,6 +22,7 @@ import { confirmDialog, toast, useUI } from './ui';
 
 export function App() {
   const ready = useStore((s) => s.ready);
+  useBridgeListeners();
   const theme = useSettings((s) => s.theme);
   const route = useRoute();
   const [failed, setFailed] = useState<string | null>(null);
@@ -33,6 +36,7 @@ export function App() {
     initStore()
       .then(() => {
         void importShareFromHash();
+        void loadBridgeJobs();
         startSync();
       })
       .catch((e) => setFailed(String(e?.message || e)));
