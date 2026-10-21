@@ -144,6 +144,7 @@ export function TextBody({ data, mode, sel, onSelectWord }: { data: ReaderData; 
           keep={data.keep}
           replace={data.replace}
           known={data.known}
+          related={data.related}
           notes={notes}
           compound={compound}
           sel={sel >= 0 && doc.words[sel] && doc.chunks[doc.words[sel].chunk].para === pi ? sel : -1}

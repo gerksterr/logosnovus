@@ -4,7 +4,7 @@
 
 import { useSettings } from '../app/settings';
 import { useUI } from '../app/ui';
-import { docFor, sentenceAround, targetKey, versionsFor, type Target } from '../data/selectors';
+import { docFor, relatedFor, sentenceAround, targetKey, versionsFor, type Target } from '../data/selectors';
 import { getRec } from '../data/store';
 import { markSeen, planLookup, runningFor, startLookup, useQueries } from '../llm/queries';
 import type { Composite } from '../calque/composites';
@@ -22,6 +22,11 @@ export function openTarget(target: Target, opts: { fresh?: boolean; dict?: boole
   }
   if (running && !opts.fresh) {
     useUI.setState({ sheet: { target, queryId: running.id, mode: 'view' } });
+    return;
+  }
+  // nothing for this form yet, but for another form of the word (sah → sahe): show that first
+  if (!versions.length && !opts.fresh && !running && relatedFor(target).length) {
+    useUI.setState({ sheet: { target, mode: 'view' } });
     return;
   }
   if (versions.length && !opts.fresh) {

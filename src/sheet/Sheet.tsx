@@ -5,8 +5,9 @@ import { go, useBackClose } from '../app/router';
 import { closeSheet, confirmDialog, toast, useUI, type SheetState } from '../app/ui';
 import { docSig } from '../calque/align';
 import { parseSlot } from '../calque/notation';
-import { docFor, langName, promptsFor, shownCalqueId, targetKey, versionsFor, type Target } from '../data/selectors';
-import { alive, getRec, remove, useStore } from '../data/store';
+import { docFor, langCode, langName, lemmaId, promptsFor, relatedFor, shownCalqueId, targetKey, versionsFor, type Target } from '../data/selectors';
+import { normalize } from '../text/forms';
+import { alive, getRec, put, remove, useStore } from '../data/store';
 import { dismissQuery, isFor, markSeen, planLookup, saveTranslation, startLookup, stopQuery, useQueries, type Query } from '../llm/queries';
 import { activeModel, modelLabel, prepare } from '../llm/run';
 import type { Translation } from '../model/types';
@@ -80,6 +81,10 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
   const key = targetKey(target);
   const translations = useStore((s) => s.translations);
   const versions = useMemo(() => versionsFor(target, translations), [translations, key]);
+  const lemmas = useStore((s) => s.lemmas);
+  // other forms of the same word (sah for sahe): shown after this form's own versions
+  const related = useMemo(() => relatedFor(target, translations, lemmas), [translations, lemmas, key]);
+  const all = useMemo(() => [...versions, ...related], [versions, related]);
   const queries = useQueries((s) => s.queries);
   const mine = useMemo(() => queries.filter((q) => q.kind !== 'chat' && isFor(q, key)), [queries, key]);
   const live = mine.filter((q) => q.status !== 'done');
@@ -102,7 +107,7 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
   }, [mine, sel.q]);
 
   const selQuery = sel.q ? live.find((q) => q.id === sel.q) : undefined;
-  const version: Translation | undefined = selQuery ? undefined : (versions.find((v) => v.id === sel.v) ?? versions[0]);
+  const version: Translation | undefined = selQuery ? undefined : (all.find((v) => v.id === sel.v) ?? all[0]);
 
   const startNew = (opts: { promptId?: string; modelId?: string; promptText?: string; body?: string } = {}) => {
     const id = startLookup(target, opts);
@@ -139,7 +144,7 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
         </div>
       ) : (
         <>
-          {(versions.length > 0 || live.length > 0) && (
+          {(all.length > 0 || live.length > 0) && (
             <div className="vstrip" role="tablist" aria-label="Versions">
               {live.map((q) => (
                 <span key={q.id} className={`vchip live ${q.status}${selQuery?.id === q.id && !compare ? ' on' : ''}`}>
@@ -163,6 +168,14 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
                   </button>
                 </span>
               ))}
+              {related.map((v) => (
+                <span key={v.id} className={`vchip rel${version?.id === v.id && !compare ? ' on' : ''}`}>
+                  <button onClick={() => (setSel({ v: v.id }), setCompare(null))} title={`Translation of “${v.target}”, another form of this word · ${fmtDate(v.createdAt)}`}>
+                    <span className="vf">{v.target}</span>
+                    <span className="vm">{shortModel(v.servedBy || v.model)}</span>
+                  </button>
+                </span>
+              ))}
             </div>
           )}
           <div className="sh-actions">
@@ -181,10 +194,10 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
             <button className={`btn small${panel === 'many' ? ' on' : ''}`} onClick={() => setPanel(panel === 'many' ? null : 'many')} title="Ask several models at once and compare">
               <Users size={13} /> Several models
             </button>
-            {versions.length > 1 && (
+            {all.length > 1 && (
               <button
                 className={`btn small hide-mobile-narrow${compare ? ' on' : ''}`}
-                onClick={() => setCompare(compare ? null : [version?.id ?? versions[0].id, versions.find((v) => v.id !== (version?.id ?? versions[0].id))!.id])}
+                onClick={() => setCompare(compare ? null : [version?.id ?? all[0].id, all.find((v) => v.id !== (version?.id ?? all[0].id))!.id])}
               >
                 <Columns2 size={13} /> Compare
               </button>
@@ -195,10 +208,14 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
             {panel === 'many' && <AskMany target={target} onSend={askMany} />}
             {panel === 'debug' && <Debug query={selQuery ?? mine.find((q) => q.resultId && q.resultId === version?.id)} version={version} />}
             {compare ? (
-              <Compare versions={versions} pair={compare} onChange={setCompare} />
+              <Compare versions={all} pair={compare} onChange={setCompare} />
             ) : selQuery ? (
               <LiveQuery q={selQuery} onRetry={() => startNew()} debug={panel === 'debug'} onDebug={() => setPanel(panel === 'debug' ? null : 'debug')} />
             ) : version ? (
+              <>
+              {wordKey(version.target) !== wordKey(target.text) && target.kind === 'word' && (
+                <OtherForm target={target} form={version.target} own={versions.length} onAsk={() => startNew()} />
+              )}
               <VersionView
                 v={version}
                 recalled={version.createdAt < openedAt - 4000}
@@ -216,6 +233,7 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
                   </>
                 }
               />
+              </>
             ) : (
               <div className="empty">No translation yet.</div>
             )}
@@ -223,6 +241,32 @@ function SheetBody({ sheet }: { sheet: SheetState }) {
         </>
       )}
     </section>
+  );
+}
+
+/** Shown above a translation that belongs to another form of the word. */
+function OtherForm({ target, form, own, onAsk }: { target: Target; form: string; own: number; onAsk: () => void }) {
+  const notSame = () => {
+    const norm = normalize(target.text, langCode(target.lang));
+    put('lemmas', { id: lemmaId(target.lang, target.text), lang: target.lang, form: norm, lemma: `=${norm}`, source: 'user', updatedAt: 0 });
+    toast(`“${target.text}” is kept apart from “${form}”.`);
+  };
+  return (
+    <div className="other-form">
+      <div>
+        This is the translation of <b>{form}</b>, {own ? 'another' : 'the nearest'} form of the same word{own ? '' : ` — “${target.text}” has none of its own yet`}.
+      </div>
+      <div className="row">
+        {!own && (
+          <button className="btn small amber" onClick={onAsk}>
+            <RefreshCw size={13} /> Ask about “{target.text}”
+          </button>
+        )}
+        <button className="btn small ghost" onClick={notSame} title="These are different words: stop grouping them">
+          Not the same word
+        </button>
+      </div>
+    </div>
   );
 }
 

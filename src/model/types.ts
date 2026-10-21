@@ -116,6 +116,17 @@ export interface Reading extends Rec {
   replace?: { start: number; end: number; text: string }[]; // custom mirror text for a chunk range
 }
 
+/**
+ * Dictionary form of a word form (id = `${lang}|${normalized form}`), from a
+ * clarification or a correction. lemma '=form' keeps a form apart from look-alikes.
+ */
+export interface Lemma extends Rec {
+  lang: Id;
+  form: string;
+  lemma: string;
+  source: 'llm' | 'user';
+}
+
 /** Synced preferences (single record, id 'prefs'). */
 export interface Prefs extends Rec {
   modelId?: Id; // active model
@@ -135,6 +146,7 @@ export interface Stores {
   calques: Calque;
   readings: Reading;
   prefs: Prefs;
+  lemmas: Lemma;
 }
 export type StoreName = keyof Stores;
 export const STORE_NAMES: StoreName[] = [
@@ -148,6 +160,7 @@ export const STORE_NAMES: StoreName[] = [
   'calques',
   'readings',
   'prefs',
+  'lemmas',
 ];
 
 export type Records = { [K in StoreName]: Record<Id, Stores[K]> };

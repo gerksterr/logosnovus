@@ -1,7 +1,8 @@
 // Derived lookups over the store, memoized on record-map identity.
 
 import { buildDoc, passageKey, wordKey, type Doc } from '../text/document';
-import type { Calque, Id, Language, Prompt, PromptKind, Text, Translation } from '../model/types';
+import type { Calque, Id, Language, Lemma, Prompt, PromptKind, Text, Translation } from '../model/types';
+import { groupKey, normalize, type LemmaLookup } from '../text/forms';
 import { alive, getRec, useStore } from './store';
 
 export interface Target {
@@ -121,4 +122,78 @@ export function shownCalqueId(text: Pick<Text, 'id' | 'calqueId'>): Id | undefin
 export function calqueLabel(c: Calque): string {
   const who = c.model?.split('/').pop() || (c.source === 'import' || c.source === 'legacy' ? 'imported' : c.source);
   return `${who} · ${new Date(c.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+// ---- forms of a word (see text/forms.ts)
+
+const CODE_BY_NAME: [RegExp, string][] = [
+  [/german|deutsch/i, 'de'],
+  [/ancient greek|koine|biblical greek/i, 'grc'],
+  [/greek/i, 'grc'],
+  [/hebrew/i, 'he'],
+  [/aramaic/i, 'arc'],
+  [/latin/i, 'la'],
+  [/english/i, 'en'],
+  [/french/i, 'fr'],
+];
+/** Language code for a language record (its own, else guessed from its name). */
+export function langCode(id: Id | undefined): string {
+  const l = getRec('langs', id);
+  if (!l) return '';
+  if (l.code) return l.code;
+  return CODE_BY_NAME.find(([re]) => re.test(l.name))?.[1] ?? '';
+}
+
+export function lemmaLookup(lang: Id, lemmas: Record<Id, Lemma> = useStore.getState().lemmas): LemmaLookup {
+  return (norm) => {
+    const r = lemmas[`${lang}|${norm}`];
+    return r && !r.deleted ? r.lemma : undefined;
+  };
+}
+
+const keyCache = new Map<string, string>();
+let keyCacheSrc: unknown = null;
+/** Key shared by all forms of a word in a language (null for phrases). */
+export function formKey(lang: Id, word: string, lemmas: Record<Id, Lemma> = useStore.getState().lemmas): string | null {
+  if (/\s|…|\.\.\./.test(word.trim())) return null;
+  if (keyCacheSrc !== lemmas) {
+    keyCache.clear();
+    keyCacheSrc = lemmas;
+  }
+  const ck = `${lang}|${word}`;
+  let k = keyCache.get(ck);
+  if (k == null) {
+    k = `${lang}|${groupKey(word, langCode(lang), lemmaLookup(lang, lemmas))}`;
+    if (keyCache.size > 50000) keyCache.clear();
+    keyCache.set(ck, k);
+  }
+  return k;
+}
+
+export const lemmaId = (lang: Id, form: string) => `${lang}|${normalize(form, langCode(lang))}`;
+
+let formIdx: { t: unknown; l: unknown; map: Map<string, Translation[]> } = { t: null, l: null, map: new Map() };
+/** Word translations by form group, newest first. */
+export function formIndex(translations: Record<Id, Translation> = useStore.getState().translations, lemmas: Record<Id, Lemma> = useStore.getState().lemmas) {
+  if (formIdx.t === translations && formIdx.l === lemmas) return formIdx.map;
+  const map = new Map<string, Translation[]>();
+  for (const t of alive(translations)) {
+    if (t.kind !== 'word') continue;
+    const k = formKey(t.lang, t.target, lemmas);
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(t);
+  }
+  for (const l of map.values()) l.sort((a, b) => b.createdAt - a.createdAt);
+  formIdx = { t: translations, l: lemmas, map };
+  return map;
+}
+
+/** Translations of other forms of the same word (e.g. "sah" for "sahe"), newest first. */
+export function relatedFor(t: Pick<Target, 'kind' | 'lang' | 'text'>, translations?: Record<Id, Translation>, lemmas?: Record<Id, Lemma>): Translation[] {
+  if (t.kind !== 'word') return [];
+  const k = formKey(t.lang, t.text, lemmas);
+  if (!k) return [];
+  const exact = wordKey(t.text);
+  return (formIndex(translations, lemmas).get(k) ?? []).filter((x) => wordKey(x.target) !== exact);
 }

@@ -22,6 +22,7 @@ export interface ParaProps {
   keep: Set<number>;
   replace: Replacement[];
   known: Set<string>;
+  related: Set<string>; // other forms of the word have translations
   notes: [number, number][];
   compound: boolean;
   sel: number; // selected word index (or -1)
@@ -64,7 +65,7 @@ function pieces(doc: Doc, from: number, to: number, w0: number, w1: number, note
   return out;
 }
 
-function Orig({ doc, ps, known, sel }: { doc: Doc; ps: Piece[]; known: Set<string>; sel: number }) {
+function Orig({ doc, ps, known, related, sel }: { doc: Doc; ps: Piece[]; known: Set<string>; related: Set<string>; sel: number }) {
   const out: ReactNode[] = [];
   for (let i = 0; i < ps.length; i++) {
     const p = ps[i];
@@ -79,7 +80,7 @@ function Orig({ doc, ps, known, sel }: { doc: Doc; ps: Piece[]; known: Set<strin
     const group = [p];
     while (i + 1 < ps.length && ps[i + 1].w === p.w) group.push(ps[++i]);
     const word = doc.words[p.w];
-    const cls = `w${word.letters ? '' : ' num'}${known.has(wordKey(word.text)) ? ' k' : ''}${sel === p.w ? ' sel' : ''}${p.note ? ' n' : ''}`;
+    const cls = `w${word.letters ? '' : ' num'}${known.has(wordKey(word.text)) ? ' k' : related.has(wordKey(word.text)) ? ' r' : ''}${sel === p.w ? ' sel' : ''}${p.note ? ' n' : ''}`;
     out.push(
       group.length === 1 && !p.color ? (
         <span key={p.a} className={cls} data-w={p.w} data-o={p.a}>
@@ -142,7 +143,7 @@ function mirrorMarkup(doc: Doc, ci: number, raw: string, keep: boolean): { m: Ma
 }
 
 function ParagraphImpl(props: ParaProps) {
-  const { doc, pi, slots, comps, keep, replace, known, notes, compound, sel, passages } = props;
+  const { doc, pi, slots, comps, keep, replace, known, related, notes, compound, sel, passages } = props;
   const para = doc.paras[pi];
   const items: ReactNode[] = [];
   let prevEnd = -1;
@@ -164,7 +165,7 @@ function ParagraphImpl(props: ParaProps) {
       items.push(
         <span key={`g${ci}`} className="c grp" data-c={ci} data-ce={rep.c1}>
           <span className="o">
-            <Orig doc={doc} ps={pieces(doc, c.start, last.end, c.w0, last.w1, notes)} known={known} sel={sel} />
+            <Orig doc={doc} ps={pieces(doc, c.start, last.end, c.w0, last.w1, notes)} known={known} related={related} sel={sel} />
           </span>
           {slots && <span className="m rep">{rep.text}</span>}
         </span>,
@@ -209,7 +210,7 @@ function ParagraphImpl(props: ParaProps) {
     items.push(
       <span key={ci} className={`c${mm?.miss ? ' miss' : ''}${keep.has(ci) ? ' keep' : ''}${comp ? ' comp' : ''}`} data-c={ci}>
         <span className="o">
-          <Orig doc={doc} ps={pieces(doc, capEnd, c.end, c.w0, c.w1, notes)} known={known} sel={sel} />
+          <Orig doc={doc} ps={pieces(doc, capEnd, c.end, c.w0, c.w1, notes)} known={known} related={related} sel={sel} />
         </span>
         {mm && (
           <span className={`m${showCompound && comp.part > 0 ? ' faded' : ''}`}>

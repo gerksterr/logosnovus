@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from 'react';
 import { docSig, realign } from '../calque/align';
 import { findComposites, type Composite } from '../calque/composites';
-import { docFor, translationIndex } from '../data/selectors';
+import { docFor, formIndex, formKey, translationIndex } from '../data/selectors';
 import { getRec, patch, useStore } from '../data/store';
 import type { Calque, Language, Reading, Text } from '../model/types';
 import { findLoose, passageKey, wordKey, type Doc } from '../text/document';
@@ -33,6 +33,7 @@ export interface ReaderData {
   keep: Set<number>; // chunk indices kept in the original
   replace: Replacement[];
   known: Set<string>; // word keys with saved translations in this language
+  related: Set<string>; // word keys whose other forms have translations (sah → sahe)
   passages: PassageMark[];
 }
 
@@ -91,6 +92,23 @@ export function useReader(textId: string): ReaderData | null {
     return out;
   }, [translations, text?.lang]);
 
+  const lemmas = useStore((s) => s.lemmas);
+  const related = useMemo(() => {
+    const out = new Set<string>();
+    if (!doc || !text) return out;
+    const idx = formIndex(translations, lemmas);
+    const seen = new Set<string>();
+    for (const w of doc.words) {
+      if (!w.letters) continue;
+      const k = wordKey(w.text);
+      if (known.has(k) || seen.has(k)) continue;
+      seen.add(k);
+      const fk = formKey(text.lang, w.text, lemmas);
+      if (fk && idx.has(fk)) out.add(k);
+    }
+    return out;
+  }, [doc, translations, lemmas, known, text?.lang]);
+
   const passages = useMemo(() => {
     if (!doc) return [];
     const byKey = new Map<string, PassageMark>();
@@ -114,5 +132,5 @@ export function useReader(textId: string): ReaderData | null {
   }, [doc, translations, textId]);
 
   if (!text || text.deleted || !doc) return null;
-  return { text, doc, lang: langs[text.lang], calque: liveCalque, slots, comps, reading, keep, replace, known, passages };
+  return { text, doc, lang: langs[text.lang], calque: liveCalque, slots, comps, reading, keep, replace, known, related, passages };
 }

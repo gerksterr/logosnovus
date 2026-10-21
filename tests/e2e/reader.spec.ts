@@ -193,3 +193,22 @@ test('book-length texts render lazily and still restore the reading position', a
   await page.waitForTimeout(400);
   expect(await first()).toBe(before);
 });
+
+test('forms of a word share translations: sprach → gesprochen, without a request', async ({ page }) => {
+  const requests = await mockOpenRouter(page);
+  await setOpenRouterKey(page);
+  await page.goto('/#/read/text-z');
+  const gesprochen = page.locator('.text .w', { hasText: /^gesprochen$/ });
+  await expect(gesprochen).not.toHaveClass(/\br\b/);
+  await page.locator('.text .w', { hasText: /^sprach$/ }).click();
+  await expect(page.locator('.sheet .md strong')).toHaveText('Answer');
+  await page.keyboard.press('Escape');
+  await expect(gesprochen).toHaveClass(/\br\b/); // dotted: another form is translated
+  await gesprochen.click();
+  await expect(page.locator('.sheet .other-form')).toContainText('sprach');
+  await expect(page.locator('.sheet .md strong')).toHaveText('Answer');
+  expect(requests).toHaveLength(1);
+  await page.locator('.sheet .other-form >> text=Not the same word').click();
+  await page.keyboard.press('Escape');
+  await expect(gesprochen).not.toHaveClass(/\br\b/);
+});

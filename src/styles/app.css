@@ -1411,3 +1411,7 @@ div.list-row {
     bottom: calc(var(--nav-h) + 66px + env(safe-area-inset-bottom));
   }
 }
+.lex-forms {
+  font: 400 14px var(--ui);
+  color: var(--fg-3);
+}
