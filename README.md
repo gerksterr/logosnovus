@@ -74,7 +74,9 @@ Google sign-in and the shared library use the Firebase project in
 `src/firebase-config.json`. One-time setup (the administrator page,
 `#/admin` → *Setup*, has buttons for both):
 
-1. Firestore → *Rules*: replace the rules with `firestore.rules` and publish.
+1. Firestore: switch the database selector at the top from *(default)* to the
+   app's database (`firestoreDatabaseId` in the config), open *Rules*, replace
+   the rules with `firestore.rules` and publish.
 2. Authentication → *Settings → Authorized domains*: add the site's domain.
 
 The rules allow reading to everyone, writing to signed-in, unblocked accounts,

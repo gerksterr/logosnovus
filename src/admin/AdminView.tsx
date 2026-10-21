@@ -520,15 +520,38 @@ function Setup() {
       <div className="setup-step card">
         <h3>1 · Database rules {sync.commons === 'live' ? <span className="badge green">working</span> : <span className="badge danger">needed</span>}</h3>
         <p className="small muted">
-          The rules make the library readable by everyone, writable by signed-in accounts, and keep the history that lets you undo anyone's changes. They are set once in
-          the Firebase console: open the rules page, replace everything there with the copied rules, press <b>Publish</b>.
+          The rules make the library readable by everyone, writable by signed-in accounts, and keep the history that lets you undo anyone's changes. They are set once
+          in the Firebase console.
         </p>
+        <ol className="setup-list small">
+          <li>
+            <b>Copy the rules</b> (button below).
+          </li>
+          <li>
+            <b>Open Firestore</b> (button below; or in the console's menu: Build → Firestore Database).
+          </li>
+          <li>
+            At the top of that page, switch the database from <i>(default)</i> to this app's database:
+            <span className="copy-line">
+              <code>{dbId}</code>
+              <button className="icon-btn" title="Copy the name" onClick={() => void navigator.clipboard.writeText(dbId).then(() => toast('Name copied.'))}>
+                <ClipboardCopy size={14} />
+              </button>
+            </span>
+          </li>
+          <li>
+            Open the <b>Rules</b> tab, select everything in the editor (Ctrl+A), paste (Ctrl+V), press <b>Publish</b>.
+          </li>
+          <li>
+            Back here, press <b>Check again</b> (it can take a minute to apply).
+          </li>
+        </ol>
         <div className="row">
           <button className="btn" onClick={() => void navigator.clipboard.writeText(rulesText).then(() => toast('Rules copied.'))}>
             <ClipboardCopy size={14} /> Copy the rules
           </button>
-          <a className="btn" href={`https://console.firebase.google.com/project/${project}/firestore/databases/${dbId}/rules`} target="_blank" rel="noopener noreferrer">
-            <ExternalLink size={14} /> Open the rules page
+          <a className="btn" href={`https://console.firebase.google.com/project/${project}/firestore`} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={14} /> Open Firestore
           </a>
           <button className="btn" onClick={reconnectCommons}>
             <RotateCcw size={14} /> Check again
@@ -539,10 +562,11 @@ function Setup() {
       <div className="setup-step card">
         <h3>2 · Google sign-in on this address</h3>
         <p className="small muted">
-          If signing in says the address is not authorized, add <code>{location.hostname}</code> under Authentication → Settings → Authorized domains.
+          If signing in says the address is not authorized: open Authentication, then its <b>Settings</b> tab → <b>Authorized domains</b> → <b>Add domain</b>, and
+          enter <code>{location.hostname}</code>.
         </p>
-        <a className="btn" href={`https://console.firebase.google.com/project/${project}/authentication/settings`} target="_blank" rel="noopener noreferrer">
-          <ExternalLink size={14} /> Open sign-in settings
+        <a className="btn" href={`https://console.firebase.google.com/project/${project}/authentication`} target="_blank" rel="noopener noreferrer">
+          <ExternalLink size={14} /> Open Authentication
         </a>
       </div>
       <div className="setup-step card">
