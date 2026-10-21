@@ -28,6 +28,8 @@ export interface Text extends Rec {
   wordModelId?: Id; // per-text model for word lookups (default: the active model)
   passageModelId?: Id; // e.g. passages through a web chat, words through an API
   calqueId?: Id; // active calque
+  auto?: ('title' | 'author' | 'lang')[]; // guessed when added and not edited since (clarifications may refine)
+  metaChecked?: number; // when a model was last asked for author/title
   rank?: number; // custom library order; set only once moved by hand
   scratch?: boolean; // the Playground text (hidden from the library)
 }

@@ -11,7 +11,7 @@ import { onOrphanAnswer, type Resume } from './bridge';
 import { activeModel, fillPrompt, modelLabel, runModel, type RunResult } from './run';
 import type { Turn } from './request';
 
-export type QueryKind = 'word' | 'passage' | 'chat' | 'calque';
+export type QueryKind = 'word' | 'passage' | 'chat' | 'calque' | 'clarify';
 
 export interface Query {
   id: string;
@@ -67,7 +67,7 @@ async function execute(q: Query, model: Model, turns: Turn[], bodyOverride?: str
         timer ??= setTimeout(flushNow, 60);
       },
       bodyOverride,
-      { label: `${q.kind === 'chat' ? 'Follow-up' : q.kind === 'calque' ? 'Calque' : q.kind === 'word' ? 'Word' : q.kind === 'passage' ? 'Passage' : 'Request'} · ${q.title}`, resume },
+      { label: `${q.kind === 'chat' ? 'Follow-up' : q.kind === 'calque' ? 'Calque' : q.kind === 'word' ? 'Word' : q.kind === 'passage' ? 'Passage' : 'Clarify'} · ${q.title}`, resume },
     );
     if (timer) clearTimeout(timer);
     update(q.id, { content: r.content, reasoning: r.reasoning, firstTokenMs: r.firstTokenMs, request: r.request, events: r.events });
@@ -287,6 +287,19 @@ export async function testModel(model: Model): Promise<string> {
 // ---------------------------------------------------------------- Claude bridge answers after a reload
 
 const clarifyHandlers = new Map<string, (data: unknown, text: string) => void>();
+
+/** One clarification request (llm/clarify.ts); its answer goes to the handler registered for `kind`. */
+export function runClarify(kind: string, title: string, model: Model, prompt: string, data: unknown): string | null {
+  const key = `clarify|${kind}|${title}|${Date.now()}`;
+  if (model.provider === 'web') return null;
+  const q = addQuery({ key, kind: 'clarify', title, model: modelLabel(model) });
+  void execute(q, model, [{ role: 'user', content: prompt }], undefined, { type: 'clarify', kind, data }).then((r) => {
+    if (r) clarifyHandlers.get(kind)?.(data, r.content);
+    update(q.id, { status: r ? 'done' : (getQuery(q.id)?.status ?? 'error'), seen: true });
+    if (r) dismissQuery(q.id);
+  });
+  return q.id;
+}
 /** Lets background clarifications apply their answers when they come back after a reload. */
 export const onClarifyAnswer = (kind: string, fn: (data: unknown, text: string) => void) => void clarifyHandlers.set(kind, fn);
 

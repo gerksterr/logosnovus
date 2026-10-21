@@ -229,3 +229,21 @@ test('sheet: instant calque gloss, several models at once, compare versions', as
     await expect(page.locator('.sheet.wide')).toBeVisible();
   }
 });
+
+test('new text: language, title, author and prompts are filled in from the text', async ({ page }) => {
+  await page.goto('/#/');
+  await page.locator('.hero >> text=New text').click();
+  const content =
+    'Vom Lesen und Schreiben\n\nAls Zarathustra zum Volke sprach, schlugen sie Pauken und lachten über die Busspredigern; sie haben Ohren und hören nicht, ' +
+    'und ihre Bildung zeichnet sie aus vor den Ziegenhirten. Muss man ihnen erst die Ohren zerschlagen, dass sie lernen, mit den Augen hören?';
+  await page.locator('.modal textarea.text-input').fill(content);
+  const field = (name: string) => page.locator('.modal .field', { has: page.locator(`span:text-is("${name}")`) });
+  await expect(field('Title').locator('input')).toHaveValue('Vom Lesen und Schreiben');
+  await expect(field('Author').locator('input')).toHaveValue('Friedrich Nietzsche');
+  await expect(field('Language').locator('select option:checked')).toHaveText('German');
+  await expect(field('Word prompt').locator('select option:checked')).toHaveText('Nietzsche word'); // like Zarathustra Vorrede 5
+  await expect(page.locator('.auto-hint')).toContainText('Zarathustra Vorrede 5');
+  await field('Author').locator('input').fill('F. N.'); // edited by hand: kept
+  await page.locator('.modal textarea.text-input').fill(content + ' Und also sprach Zarathustra.');
+  await expect(field('Author').locator('input')).toHaveValue('F. N.');
+});

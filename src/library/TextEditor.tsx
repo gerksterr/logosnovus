@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { Sparkles } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { go } from '../app/router';
 import { askText, confirmDialog } from '../app/ui';
 import { languages, promptsFor } from '../data/selectors';
+import { inferMeta, LANGUAGE_NAMES } from './inferMeta';
 import { put, uid, useStore } from '../data/store';
 import type { Text } from '../model/types';
 import { detectRtl } from '../text/document';
@@ -19,6 +21,26 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
   const [content, setContent] = useState(text?.content ?? '');
   const [wordPrompt, setWordPrompt] = useState(text?.wordPromptId ?? '');
   const [passagePrompt, setPassagePrompt] = useState(text?.passagePromptId ?? '');
+  // A new text fills in what it can from its content (and the most similar text in the library)
+  // until a field is edited by hand.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+  const touch = (f: string) => !touched.has(f) && setTouched(new Set(touched).add(f));
+  const [applied, setApplied] = useState<Set<'title' | 'author' | 'lang'>>(() => new Set());
+  const deferred = useDeferredValue(content);
+  const guess = useMemo(() => (!text && deferred.trim().length >= 20 ? inferMeta(deferred) : null), [text, deferred]);
+  useEffect(() => {
+    if (!guess) return;
+    const got = new Set<'title' | 'author' | 'lang'>();
+    if (guess.langId && !touched.has('lang')) (setLang(guess.langId), got.add('lang'));
+    if (guess.title && !touched.has('title')) (setTitle(guess.title), got.add('title'));
+    if (guess.author && !touched.has('author')) (setAuthor(guess.author), got.add('author'));
+    if (guess.tags && !touched.has('tags')) setTags(guess.tags.join(', '));
+    if (guess.wordPromptId && !touched.has('wordPrompt')) setWordPrompt(guess.wordPromptId);
+    if (guess.passagePromptId && !touched.has('passagePrompt')) setPassagePrompt(guess.passagePromptId);
+    setApplied(got);
+  }, [guess]);
+  const auto = [...applied].filter((f) => !touched.has(f));
+
   const dirty =
     title !== (text?.title ?? '') || author !== (text?.author ?? '') || content !== (text?.content ?? '') || lang !== (text?.lang ?? langs[0]?.id ?? '') ||
     wordPrompt !== (text?.wordPromptId ?? '') || passagePrompt !== (text?.passagePromptId ?? '') || tagList.join(',') !== (text?.tags ?? []).join(',');
@@ -37,6 +59,7 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
       content,
       wordPromptId: wordPrompt || undefined,
       passagePromptId: passagePrompt || undefined,
+      auto: text ? text.auto?.filter((f) => !touched.has(f)) : auto.length ? auto : undefined,
       updatedAt: now,
     } as Text);
     onClose();
@@ -48,8 +71,14 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
     const l = put('langs', { id: uid('lang'), name, rtl: detectRtl(content), updatedAt: 0 });
     setLang(l.id);
   };
+  const addGuessedLanguage = () => {
+    if (!guess?.langName) return;
+    const l = put('langs', { id: uid('lang'), name: guess.langName, code: guess.code, rtl: detectRtl(content), updatedAt: 0 });
+    setLang(l.id);
+    touch('lang');
+  };
   const promptSelect = (kind: 'word' | 'passage', value: string, set: (v: string) => void) => (
-    <select className="input" value={value} onChange={(e) => set(e.target.value)}>
+    <select className="input" value={value} onChange={(e) => (touch(kind === 'word' ? 'wordPrompt' : 'passagePrompt'), set(e.target.value))}>
       <option value="">Automatic (first matching prompt)</option>
       {promptsFor(kind, lang, prompts).map((p) => (
         <option key={p.id} value={p.id}>
@@ -78,21 +107,21 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
       <div className="row">
         <label className="field grow">
           <span>Title</span>
-          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Zarathustras Vorrede 5" />
+          <input className="input" value={title} onChange={(e) => (touch('title'), setTitle(e.target.value))} placeholder="e.g. Zarathustras Vorrede 5" />
         </label>
         <label className="field grow">
           <span>Author</span>
-          <input className="input" value={author} onChange={(e) => setAuthor(e.target.value)} />
+          <input className="input" value={author} onChange={(e) => (touch('author'), setAuthor(e.target.value))} />
         </label>
         <label className="field grow">
           <span>Tags</span>
-          <input className="input" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="e.g. Red Book, Jung" />
+          <input className="input" value={tags} onChange={(e) => (touch('tags'), setTags(e.target.value))} placeholder="e.g. Red Book, Jung" />
         </label>
       </div>
       <div className="row">
         <label className="field grow">
           <span>Language</span>
-          <select className="input" value={lang} onChange={(e) => (e.target.value === '+' ? void addLanguage() : setLang(e.target.value))}>
+          <select className="input" value={lang} onChange={(e) => (touch('lang'), e.target.value === '+' ? void addLanguage() : setLang(e.target.value))}>
             {langs.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}
@@ -110,6 +139,21 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
           {promptSelect('passage', passagePrompt, setPassagePrompt)}
         </label>
       </div>
+      {guess && (guess.code || guess.similarTitle || guess.work) && (
+        <div className="auto-hint">
+          <Sparkles size={14} />
+          <span className="grow">
+            Filled in from the text{guess.code ? `: ${LANGUAGE_NAMES[guess.code] ?? guess.code}` : ''}
+            {guess.similarTitle ? ` · prompts and tags like “${guess.similarTitle}”` : ''}
+            {guess.work ? ` · ${guess.work}` : ''}. Change any field to keep your own.
+          </span>
+          {guess.langName && !guess.langId && (
+            <button className="btn small" onClick={addGuessedLanguage}>
+              Add {guess.langName}
+            </button>
+          )}
+        </div>
+      )}
       <label className="field">
         <span>Text</span>
         <textarea

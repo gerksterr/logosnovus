@@ -6,7 +6,10 @@ import { confirmDialog, toast } from '../app/ui';
 import { wipe } from '../data/db';
 import { encodeShare, shareUrl } from '../data/share';
 import { alive, flush, put, remove, useStore } from '../data/store';
+import { setSetting, useSettings } from '../app/settings';
 import { BRIDGE_URL, bridgeUrl } from '../llm/bridge';
+import { estimateTokens, pendingClarifications, runClarifications } from '../llm/clarify';
+import { ModelPicker } from '../ui/ModelPicker';
 import { BUILTIN_PROVIDERS } from '../llm/providers';
 import { importLegacyCloud, signIn, signOut, syncNow, useSync } from '../sync/cloud';
 import { STORE_NAMES, type Rec } from '../model/types';
@@ -20,6 +23,7 @@ export function SettingsView() {
       </div>
       <Keys />
       <ClaudeBridge />
+      <Clarifications />
       <Sync />
       <Data />
       <Storage />
@@ -44,6 +48,49 @@ function Keys() {
         Free options: OpenRouter has free models (marked “free” in the model editor); Google AI Studio keys include a free Gemini tier. Copy & paste models (Claude.ai, ChatGPT,
         AI Studio) need no key at all. <button className="linkish" onClick={() => go('/prompts/models')}>Manage models →</button>
       </p>
+    </section>
+  );
+}
+
+/** Small model requests that refine local guesses (word forms, authors). */
+function Clarifications() {
+  const st = useSettings();
+  useStore((s) => s.lemmas);
+  useStore((s) => s.texts);
+  const plan = pendingClarifications();
+  return (
+    <section className="section">
+      <h2>Clarifications</h2>
+      <p className="small faint">
+        Word forms (sah, sahe, gesehen → sehen) and authors are worked out on this device without any model. A model can make them exact: it gets lists of words and
+        short excerpts, a few thousand tokens for a whole library, sent together.
+      </p>
+      <div className="seg" role="group" aria-label="Clarifications">
+        {(
+          [
+            ['off', 'Off'],
+            ['ask', 'Collect, run when I ask'],
+            ['auto', 'Run automatically'],
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} className={st.clarify === v ? 'on' : ''} onClick={() => setSetting('clarify', v)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {st.clarify !== 'off' && (
+        <div className="row" style={{ marginTop: 10 }}>
+          <ModelPicker value={st.clarifyModelId ?? ''} onChange={(id) => setSetting('clarifyModelId', id || undefined)} defaultLabel="Active model" />
+          <button className="btn" disabled={!plan.forms && !plan.meta.length} onClick={() => toast(`${runClarifications()} clarification requests sent.`)}>
+            Run now
+          </button>
+          <span className="small muted">
+            {plan.forms || plan.meta.length
+              ? `${plan.forms} word forms, ${plan.meta.length} texts waiting · about ${Math.ceil(estimateTokens(plan) / 1000)}k tokens`
+              : 'Nothing waiting.'}
+          </span>
+        </div>
+      )}
     </section>
   );
 }

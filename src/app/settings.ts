@@ -18,6 +18,8 @@ export interface DeviceSettings {
   mirrorBar: boolean; // floating mode bar on desktop (always on for touch)
   sort: LibrarySort;
   libraryView: 'grid' | 'list';
+  clarify: 'off' | 'ask' | 'auto'; // small model requests for word forms and authors
+  clarifyModelId?: string;
 }
 
 const DEFAULTS: DeviceSettings = {
@@ -33,6 +35,7 @@ const DEFAULTS: DeviceSettings = {
   mirrorBar: false,
   sort: 'added',
   libraryView: 'grid',
+  clarify: 'ask',
 };
 
 const KEY = 'logosnovus.settings';

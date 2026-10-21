@@ -1415,3 +1415,22 @@ div.list-row {
   font: 400 14px var(--ui);
   color: var(--fg-3);
 }
+.auto-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--cyan-soft);
+  color: var(--fg-2);
+  font-size: 13px;
+}
+.auto-hint svg {
+  color: var(--cyan);
+  flex: none;
+}
+.clarify-chip {
+  margin: 4px 8px 0 0;
+}

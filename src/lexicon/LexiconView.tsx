@@ -2,7 +2,10 @@
 // calque meaning, a one-line gloss, all saved versions, and every place it
 // occurs in your texts (keyword in context, a tap opens the text there).
 
-import { BookA, ChevronDown, ChevronRight, ExternalLink, Layers, Search } from 'lucide-react';
+import { BookA, ChevronDown, ChevronRight, ExternalLink, Layers, Search, Sparkles } from 'lucide-react';
+import { useSettings } from '../app/settings';
+import { toast } from '../app/ui';
+import { estimateTokens, pendingClarifications, runClarifications } from '../llm/clarify';
 import { useEffect, useMemo, useState } from 'react';
 import { go } from '../app/router';
 import { docFor, formKey, langName, targetKey, versionsFor } from '../data/selectors';
@@ -91,6 +94,7 @@ export function LexiconView({ lang: langParam, word }: { lang?: string; word?: s
             <BookA size={12} /> Lexicon
           </span>
           <h1>{langName(lang) || 'Lexicon'}</h1>
+          <ClarifyChip />
           <p>
             {all.length} words looked up{vocab ? ` · ${vocab} of them occur in your texts` : ''} · {passages.length} passages. Word translations belong to the language, so every text
             shares them.
@@ -278,5 +282,20 @@ function PassageItem({ p }: { p: Translation }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Waiting clarifications (word forms, authors) with a Run button — only when there are some. */
+function ClarifyChip() {
+  const mode = useSettings((s) => s.clarify);
+  useStore((s) => s.lemmas);
+  useStore((s) => s.texts);
+  if (mode === 'off') return null;
+  const plan = pendingClarifications();
+  if (!plan.forms && !plan.meta.length) return null;
+  return (
+    <button className="badge cyan clarify-chip" onClick={() => toast(`${runClarifications()} clarification requests sent.`)} title={`About ${Math.ceil(estimateTokens(plan) / 1000)}k tokens with the model chosen in Settings`}>
+      <Sparkles size={11} /> {plan.forms} word forms to clarify · Run
+    </button>
   );
 }

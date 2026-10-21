@@ -10,6 +10,7 @@ import { PromptsView } from '../prompts/PromptsView';
 import { ReaderView } from '../reader/ReaderView';
 import { SettingsView } from '../settings/SettingsView';
 import { loadBridgeJobs } from '../llm/bridge';
+import { startAutoClarify } from '../llm/clarify';
 import { useBridgeListeners } from '../sheet/BridgeBar';
 import { Dock } from '../sheet/Dock';
 import { Sheet } from '../sheet/Sheet';
@@ -37,6 +38,7 @@ export function App() {
       .then(() => {
         void importShareFromHash();
         void loadBridgeJobs();
+        startAutoClarify();
         startSync();
       })
       .catch((e) => setFailed(String(e?.message || e)));
