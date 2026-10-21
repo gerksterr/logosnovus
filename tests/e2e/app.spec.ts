@@ -27,6 +27,35 @@ test('calque: generate with an edited request, then read it in mirror mode', asy
   await expect(page.locator('.text .c .m', { hasText: /^Culture$/ })).toBeVisible();
 });
 
+test('several calques: one click or C swaps the interlinear translation', async ({ page }) => {
+  await page.route('https://openrouter.ai/api/v1/chat/completions', (route) =>
+    route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `data: ${JSON.stringify({ choices: [{ delta: { content: ZARATHUSTRA_CALQUE.replace('Education', 'Culture') } }] })}\n\ndata: [DONE]\n\n` }),
+  );
+  await setOpenRouterKey(page);
+  await page.goto('/#/read/text-z');
+  await page.locator('[title^="Calque"]').click();
+  await page.locator('.modal .tabs >> text=Generate').click();
+  await page.locator('.modal >> text=Generate calque').click();
+  await expect(page.locator('.modal .tabs button.on')).toHaveText('Alignment');
+  await page.keyboard.press('Escape');
+  const word = (w: string) => page.locator('.text .c .m', { hasText: new RegExp(`^${w}$`) });
+  const swap = page.locator('.calque-swap:visible, .mode-bar .swap:visible').first();
+  await page.locator('.mode-seg button:visible, .mode-bar button:visible', { hasText: /^Mirror$/ }).first().click();
+  await expect(word('Culture')).toBeVisible(); // the new calque is shown
+  await expect(swap).toHaveText('2/2');
+  await swap.click();
+  await expect(word('Education')).toBeVisible();
+  await expect(swap).toHaveText('1/2');
+  if (test.info().project.name === 'desktop') {
+    await page.keyboard.press('c');
+    await expect(word('Culture')).toBeVisible();
+    await page.keyboard.press('c');
+  } else await swap.click(), await swap.click();
+  await expect(word('Education')).toBeVisible();
+  await page.reload(); // the choice is kept
+  await expect(page.locator('.calque-swap:visible, .mode-bar .swap:visible').first()).toHaveText('1/2');
+});
+
 test('chat about a saved translation is stored on that version', async ({ page }) => {
   const requests = await mockOpenRouter(page);
   await setOpenRouterKey(page);

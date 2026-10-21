@@ -110,6 +110,7 @@ export interface Calque extends Rec {
 /** Per-text reading state and mirror-view overrides (id = text id). */
 export interface Reading extends Rec {
   pos?: number; // plain offset of the first visible word
+  calqueId?: Id; // calque shown on this account (swapped with C); default: the text's calqueId
   keep?: number[]; // chunk start offsets shown untranslated in mirror view
   keepWords?: string[]; // word keys shown untranslated everywhere in this text
   replace?: { start: number; end: number; text: string }[]; // custom mirror text for a chunk range

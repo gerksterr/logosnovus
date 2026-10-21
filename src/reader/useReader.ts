@@ -44,7 +44,8 @@ export function useReader(textId: string): ReaderData | null {
   const translations = useStore((s) => s.translations);
 
   const doc = useMemo(() => (text && !text.deleted ? docFor(text) : null), [text, langs]);
-  const calque = text?.calqueId ? calques[text.calqueId] : undefined;
+  const shown = text ? (reading?.calqueId && calques[reading.calqueId]?.textId === text.id && !calques[reading.calqueId].deleted ? reading.calqueId : text.calqueId) : undefined;
+  const calque = shown ? calques[shown] : undefined;
   const liveCalque = calque && !calque.deleted ? calque : undefined;
 
   const slots = useMemo(() => {

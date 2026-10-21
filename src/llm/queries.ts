@@ -247,6 +247,7 @@ export function saveCalque(text: Text, raw: string, extra: { source: 'ai' | 'imp
   const now = Date.now();
   const c = put('calques', { id: uid('cq'), textId: text.id, createdAt: now, updatedAt: now, slots: a.slots, sig: docSig(doc), raw, ...extra });
   patch('texts', text.id, { calqueId: c.id });
+  if (getRec('readings', text.id)?.calqueId) patch('readings', text.id, { calqueId: undefined }); // show the new one
   return { calque: c, uncertain: a.uncertain };
 }
 

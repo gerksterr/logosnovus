@@ -5,7 +5,7 @@ import { go, useBackClose } from '../app/router';
 import { closeSheet, confirmDialog, toast, useUI, type SheetState } from '../app/ui';
 import { docSig } from '../calque/align';
 import { parseSlot } from '../calque/notation';
-import { docFor, langName, promptsFor, targetKey, versionsFor, type Target } from '../data/selectors';
+import { docFor, langName, promptsFor, shownCalqueId, targetKey, versionsFor, type Target } from '../data/selectors';
 import { alive, getRec, remove, useStore } from '../data/store';
 import { dismissQuery, isFor, markSeen, planLookup, saveTranslation, startLookup, stopQuery, useQueries, type Query } from '../llm/queries';
 import { activeModel, modelLabel, prepare } from '../llm/run';
@@ -56,7 +56,7 @@ const shortModel = (m?: string) => (m ?? '').split('/').pop() || 'model';
 /** Word-for-word rendering of the target from the text's active calque (instant, offline). */
 function calqueGloss(target: Target): string | null {
   const text = getRec('texts', target.textId);
-  const cq = getRec('calques', text?.calqueId);
+  const cq = getRec('calques', text ? shownCalqueId(text) : undefined);
   if (!text || !cq || !target.anchor) return null;
   const doc = docFor(text);
   if (cq.sig !== docSig(doc)) return null;

@@ -1405,3 +1405,9 @@ div.list-row {
   border-radius: 12px;
   background: var(--violet-soft);
 }
+/* phones: the floating mode bar sits at the bottom right; requests stack above it */
+@media (max-width: 759px) {
+  body:has(.mode-bar) .dock {
+    bottom: calc(var(--nav-h) + 66px + env(safe-area-inset-bottom));
+  }
+}

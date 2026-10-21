@@ -498,6 +498,25 @@
 .mode-bar button.on svg {
   display: inline;
 }
+.mode-bar button.swap {
+  border-left: 1px solid var(--line-2);
+  color: var(--cyan);
+  font-weight: 600;
+}
+.mode-bar button.swap svg {
+  display: inline;
+}
+@media (max-width: 420px) {
+  .mode-bar button {
+    padding: 9px 8px;
+    font-size: 12px;
+  }
+}
+.calque-swap {
+  color: var(--cyan);
+  border-color: var(--cyan-line);
+  font-variant-numeric: tabular-nums;
+}
 @media (min-width: 760px) {
   .sel-bar,
   .mode-bar {

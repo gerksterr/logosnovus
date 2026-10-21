@@ -202,7 +202,13 @@ function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
             {view === c.id ? 'Hide' : 'View'}
           </button>
           {c.id !== text.calqueId && (
-            <button className="btn small" onClick={() => patch('texts', text.id, { calqueId: c.id })}>
+            <button
+              className="btn small"
+              onClick={() => {
+                patch('texts', text.id, { calqueId: c.id });
+                if (getRec('readings', text.id)?.calqueId) patch('readings', text.id, { calqueId: undefined });
+              }}
+            >
               Use
             </button>
           )}

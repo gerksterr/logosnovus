@@ -1,7 +1,7 @@
 // Derived lookups over the store, memoized on record-map identity.
 
 import { buildDoc, passageKey, wordKey, type Doc } from '../text/document';
-import type { Id, Language, Prompt, PromptKind, Text, Translation } from '../model/types';
+import type { Calque, Id, Language, Prompt, PromptKind, Text, Translation } from '../model/types';
 import { alive, getRec, useStore } from './store';
 
 export interface Target {
@@ -98,4 +98,27 @@ export function sentenceAround(doc: Doc, start: number, end: number): string {
     }
   }
   return text.slice(from, to).replace(/\s+/g, ' ').trim();
+}
+
+// ---- calques of a text
+
+/** All calque versions of a text, oldest first (the order the swap button cycles through). */
+export function calquesOf(textId: Id, calques: Record<Id, Calque> = useStore.getState().calques): Calque[] {
+  return alive(calques)
+    .filter((c) => c.textId === textId)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** The calque shown for a text: this account's choice, else the text's own. */
+export function shownCalqueId(text: Pick<Text, 'id' | 'calqueId'>): Id | undefined {
+  const s = useStore.getState();
+  const mine = s.readings[text.id]?.calqueId;
+  const c = mine ? s.calques[mine] : undefined;
+  return c && !c.deleted && c.textId === text.id ? mine : text.calqueId;
+}
+
+/** Short name for a calque version: model and date. */
+export function calqueLabel(c: Calque): string {
+  const who = c.model?.split('/').pop() || (c.source === 'import' || c.source === 'legacy' ? 'imported' : c.source);
+  return `${who} · ${new Date(c.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
