@@ -6,6 +6,8 @@ import { chatModel, chatPromptText, saveChatExchange, startChat, stopQuery, useQ
 import { activeModel, modelLabel } from '../llm/run';
 import type { Model } from '../model/types';
 import { Markdown } from '../ui/Markdown';
+import { useBridge } from '../llm/bridge';
+import { BridgeSteps } from './BridgeBar';
 import { WebPaste } from './WebPaste';
 
 /** Web model to start a copy & paste exchange with: the given one, else the active one, else the first. */
@@ -32,6 +34,7 @@ export function Chat({ translationId }: { translationId: string }) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<{ message: string; modelId: string } | null>(null);
   const [withContext, setWithContext] = useState(true);
+  const waiting = useBridge((s) => s.jobs.length);
   if (!tr) return null;
   const model = chatModel(tr);
   const web = model?.provider === 'web';
@@ -59,6 +62,8 @@ export function Chat({ translationId }: { translationId: string }) {
         <div className="msg assistant">
           {q.content ? (
             <Markdown text={q.content} />
+          ) : q.bridge ? (
+            <BridgeSteps count={waiting} />
           ) : (
             <div className="row small muted">
               <span className="spin" /> {q.reasoning ? 'Thinking…' : 'Waiting for the model…'}

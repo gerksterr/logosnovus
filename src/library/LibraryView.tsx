@@ -4,7 +4,8 @@ import { go } from '../app/router';
 import { setSetting, useSettings, type LibrarySort } from '../app/settings';
 import { confirmDialog, toast } from '../app/ui';
 import { defaultPrompt, langName } from '../data/selectors';
-import { alive, getRec, patch, remove, useStore } from '../data/store';
+import { patchReading } from '../data/migrate';
+import { alive, getRec, remove, useStore } from '../data/store';
 import { shareUrl, encodeShare } from '../data/share';
 import { modelLabel } from '../llm/run';
 import type { Text } from '../model/types';
@@ -63,7 +64,8 @@ export function LibraryView() {
   const listRef = useRef<HTMLDivElement>(null);
 
   const stats = textStats(translations);
-  const all = useMemo(() => alive(texts).filter((t) => !t.scratch), [texts]);
+  // custom order is personal (Reading.rank); sorting reads it as text.rank
+  const all = useMemo(() => alive(texts).filter((t) => !t.scratch).map((t) => ({ ...t, rank: readings[t.id]?.deleted ? undefined : readings[t.id]?.rank })), [texts, readings]);
   const hasCalque = (t: Text) => !!t.calqueId && !!calques[t.calqueId] && !calques[t.calqueId].deleted;
   const readAt = (t: Text) => {
     const r = readings[t.id];
@@ -122,7 +124,7 @@ export function LibraryView() {
   };
   const endDrag = () => {
     if (!drag) return;
-    for (const c of moveRanks(filtered, drag.from, drag.to)) patch('texts', c.id, { rank: c.rank });
+    for (const c of moveRanks(filtered, drag.from, drag.to)) patchReading(c.id, { rank: c.rank });
     setDrag(null);
   };
 
@@ -251,8 +253,8 @@ export function LibraryView() {
           const p = progress(t, readings[t.id]);
           const wp = getRec('prompts', t.wordPromptId) ?? defaultPrompt('word', t, t.lang);
           const pp = getRec('prompts', t.passagePromptId) ?? defaultPrompt('passage', t, t.lang);
-          const wm = getRec('models', t.wordModelId);
-          const pm = getRec('models', t.passageModelId);
+          const wm = getRec('models', readings[t.id]?.wordModelId);
+          const pm = getRec('models', readings[t.id]?.passageModelId);
           return (
             <article key={t.id} className={`text-card${drag && filtered[drag.from] === t ? ' dragging' : ''}`}>
               <div className="tc-top">

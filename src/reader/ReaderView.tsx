@@ -1,9 +1,9 @@
-import { ArrowLeft, ArrowLeftRight, BookOpen, Columns2, Layers, Map as MapIcon, NotebookText, Rows3, Type } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowLeft, ArrowLeftRight, BookOpen, Columns2, Layers, Map as MapIcon, NotebookText, Repeat, Rows3, Type } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { go } from '../app/router';
 import { isTouch, setSetting, useSettings } from '../app/settings';
-import { useUI } from '../app/ui';
-import { translationIndex, versionsFor } from '../data/selectors';
+import { toast, useUI } from '../app/ui';
+import { calqueLabel, calquesOf, translationIndex, versionsFor } from '../data/selectors';
 import { TextEditor } from '../library/TextEditor';
 import { put, useStore } from '../data/store';
 import { openTarget, passageTarget } from '../sheet/open';
@@ -78,7 +78,21 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
       }
   }, [textId, embedded]);
 
-  // ---- keyboard: M flips mirror/aligned, O original, I interlinear
+  // ---- several calques: one click (or C) shows the next one; the choice is this account's
+  const allCalques = useStore((st) => st.calques);
+  const versions = useMemo(() => calquesOf(textId, allCalques), [allCalques, textId]);
+  const shownIdx = versions.findIndex((v) => v.id === data?.calque?.id);
+  const swapCalque = useCallback(() => {
+    if (versions.length < 2 || !data) return;
+    const i = (shownIdx + 1) % versions.length;
+    const next = versions[i];
+    const r = useStore.getState().readings[textId];
+    put('readings', { ...(r && !r.deleted ? r : {}), id: textId, updatedAt: 0, calqueId: next.id === data.text.calqueId ? undefined : next.id });
+    if (mode === 'orig') setMode('inter');
+    toast(`Calque ${i + 1} of ${versions.length} · ${calqueLabel(next)}`, 'info', 1600);
+  }, [versions, shownIdx, data, textId, mode, setMode]);
+
+  // ---- keyboard: M flips mirror/aligned, O original, I interlinear, C next calque
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest('input, textarea, select, [contenteditable]')) return;
@@ -87,10 +101,11 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
       if (k === 'm') setMode(mode === 'mirror' ? 'aligned' : 'mirror');
       else if (k === 'o') setMode('orig');
       else if (k === 'i') setMode(mode === 'inter' ? 'orig' : 'inter');
+      else if (k === 'c') swapCalque();
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [data?.slots, mode, setMode]);
+  }, [data?.slots, mode, setMode, swapCalque]);
 
   // ---- scroll memory: restore once per opened text, save while reading
   const restored = useRef(false);
@@ -203,6 +218,11 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
             ))}
           </div>
         )}
+        {versions.length > 1 && (
+          <button className="btn small calque-swap hide-mobile" onClick={swapCalque} title={`Show the next calque (C) · now: ${data.calque ? calqueLabel(data.calque) : ''}`}>
+            <Repeat size={14} /> {shownIdx + 1}/{versions.length}
+          </button>
+        )}
         <ModelPicker compact className="reader-model" />
         <button className={`icon-btn${panel === 'calque' ? ' on' : ''}`} onClick={() => setPanel(panel === 'calque' ? null : 'calque')} title="Calque (word-for-word mirror)">
           <Layers size={18} />
@@ -243,6 +263,11 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
               {label}
             </button>
           ))}
+          {versions.length > 1 && (
+            <button className="swap" onClick={swapCalque} title="Show the next calque" aria-label={`Calque ${shownIdx + 1} of ${versions.length}: show the next`}>
+              <Repeat size={14} /> {shownIdx + 1}/{versions.length}
+            </button>
+          )}
         </div>
       )}
 

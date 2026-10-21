@@ -3,9 +3,9 @@
 
 import { docSig } from '../calque/align';
 import { parseSlot } from '../calque/notation';
-import { docFor } from '../data/selectors';
+import { docFor, formKey } from '../data/selectors';
 import { alive } from '../data/store';
-import type { Calque, Id, Text, Translation } from '../model/types';
+import type { Calque, Id, Lemma, Text, Translation } from '../model/types';
 import { wordKey } from '../text/document';
 
 export interface Occurrence {
@@ -15,8 +15,9 @@ export interface Occurrence {
 }
 
 export interface Entry {
-  key: string;
+  key: string; // form group (text/forms.ts)
   word: string; // most frequent spelling looked up
+  forms: string[]; // every spelling looked up
   versions: Translation[]; // newest first
   last: number;
   occ: Occurrence[];
@@ -47,24 +48,24 @@ export function shortGloss(md: string): string {
   return '';
 }
 
-const groupKey = (lang: Id, textsSrc: unknown) => ({ lang, textsSrc });
-let concMemo: { k: ReturnType<typeof groupKey> | null; out: Map<string, Occurrence[]> } = { k: null, out: new Map() };
+let concMemo: { lang: Id; t: unknown; l: unknown; out: Map<string, Occurrence[]> } | null = null;
 
-/** Every word of every text in the language, by word key. */
-export function concordance(lang: Id, texts: Record<Id, Text>): Map<string, Occurrence[]> {
-  if (concMemo.k && concMemo.k.lang === lang && concMemo.k.textsSrc === texts) return concMemo.out;
+/** Every word of every text in the language, by form group (all forms of a word together). */
+export function concordance(lang: Id, texts: Record<Id, Text>, lemmas?: Record<Id, Lemma>): Map<string, Occurrence[]> {
+  if (concMemo && concMemo.lang === lang && concMemo.t === texts && concMemo.l === lemmas) return concMemo.out;
   const out = new Map<string, Occurrence[]>();
   for (const t of alive(texts)) {
     if (t.lang !== lang || t.scratch) continue;
     for (const w of docFor(t).words) {
       if (!w.letters) continue;
-      const k = wordKey(w.text);
+      const k = formKey(lang, w.text, lemmas);
+      if (!k) continue;
       let l = out.get(k);
       if (!l) out.set(k, (l = []));
       l.push({ textId: t.id, start: w.start, end: w.end });
     }
   }
-  concMemo = { k: groupKey(lang, texts), out };
+  concMemo = { lang, t: texts, l: lemmas, out };
   return out;
 }
 
@@ -94,13 +95,13 @@ export function calqueGlosses(lang: Id, texts: Record<Id, Text>, calques: Record
 }
 
 /** Lexicon entries for one language. */
-export function entries(lang: Id, translations: Record<Id, Translation>, texts: Record<Id, Text>, calques: Record<Id, Calque>): Entry[] {
-  const conc = concordance(lang, texts);
+export function entries(lang: Id, translations: Record<Id, Translation>, texts: Record<Id, Text>, calques: Record<Id, Calque>, lemmas?: Record<Id, Lemma>): Entry[] {
+  const conc = concordance(lang, texts, lemmas);
   const glosses = calqueGlosses(lang, texts, calques);
   const byKey = new Map<string, Translation[]>();
   for (const t of alive(translations)) {
     if (t.kind !== 'word' || t.lang !== lang) continue;
-    const k = wordKey(t.target);
+    const k = formKey(lang, t.target, lemmas) ?? `${lang}|${wordKey(t.target)}`;
     let l = byKey.get(k);
     if (!l) byKey.set(k, (l = []));
     l.push(t);
@@ -110,8 +111,10 @@ export function entries(lang: Id, translations: Record<Id, Translation>, texts: 
     versions.sort((a, b) => b.createdAt - a.createdAt);
     const spellings = new Map<string, number>();
     for (const v of versions) spellings.set(v.target, (spellings.get(v.target) ?? 0) + 1);
-    const word = [...spellings].sort((a, b) => b[1] - a[1])[0][0];
-    out.push({ key, word, versions, last: versions[0].createdAt, occ: conc.get(key) ?? [], calque: glosses.get(key), gloss: shortGloss(versions[0].content) });
+    const ranked = [...spellings].sort((a, b) => b[1] - a[1]).map(([w]) => w);
+    const word = ranked[0];
+    const forms = [...new Set(ranked.map((w) => w.toLowerCase()))].length > 1 ? ranked : [word];
+    out.push({ key, word, forms, versions, last: versions[0].createdAt, occ: conc.get(key) ?? [], calque: glosses.get(wordKey(word)), gloss: shortGloss(versions[0].content) });
   }
   return out;
 }

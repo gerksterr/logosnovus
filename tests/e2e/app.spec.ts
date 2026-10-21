@@ -27,6 +27,35 @@ test('calque: generate with an edited request, then read it in mirror mode', asy
   await expect(page.locator('.text .c .m', { hasText: /^Culture$/ })).toBeVisible();
 });
 
+test('several calques: one click or C swaps the interlinear translation', async ({ page }) => {
+  await page.route('https://openrouter.ai/api/v1/chat/completions', (route) =>
+    route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `data: ${JSON.stringify({ choices: [{ delta: { content: ZARATHUSTRA_CALQUE.replace('Education', 'Culture') } }] })}\n\ndata: [DONE]\n\n` }),
+  );
+  await setOpenRouterKey(page);
+  await page.goto('/#/read/text-z');
+  await page.locator('[title^="Calque"]').click();
+  await page.locator('.modal .tabs >> text=Generate').click();
+  await page.locator('.modal >> text=Generate calque').click();
+  await expect(page.locator('.modal .tabs button.on')).toHaveText('Alignment');
+  await page.keyboard.press('Escape');
+  const word = (w: string) => page.locator('.text .c .m', { hasText: new RegExp(`^${w}$`) });
+  const swap = page.locator('.calque-swap:visible, .mode-bar .swap:visible').first();
+  await page.locator('.mode-seg button:visible, .mode-bar button:visible', { hasText: /^Mirror$/ }).first().click();
+  await expect(word('Culture')).toBeVisible(); // the new calque is shown
+  await expect(swap).toHaveText('2/2');
+  await swap.click();
+  await expect(word('Education')).toBeVisible();
+  await expect(swap).toHaveText('1/2');
+  if (test.info().project.name === 'desktop') {
+    await page.keyboard.press('c');
+    await expect(word('Culture')).toBeVisible();
+    await page.keyboard.press('c');
+  } else await swap.click(), await swap.click();
+  await expect(word('Education')).toBeVisible();
+  await page.reload(); // the choice is kept
+  await expect(page.locator('.calque-swap:visible, .mode-bar .swap:visible').first()).toHaveText('1/2');
+});
+
 test('chat about a saved translation is stored on that version', async ({ page }) => {
   const requests = await mockOpenRouter(page);
   await setOpenRouterKey(page);
@@ -89,8 +118,8 @@ test('model picker: readable list, switches the active model', async ({ page }) 
   const trigger = test.info().project.name === 'phone' ? page.locator('.lookup-row.passage .mp-trigger') : page.locator('.reader-bar .mp-trigger');
   await trigger.click();
   const pop = page.locator('.mp-pop');
-  await expect(pop.locator('.mp-group')).toHaveText([/API/, /Copy & paste/]);
-  await expect(pop.locator('.mp-row', { hasText: 'Claude.ai' })).not.toContainText('copy & paste'); // no duplicated suffix
+  await expect(pop.locator('.mp-group')).toHaveText([/API/, /Claude/, /Copy & paste/]);
+  await expect(pop.getByRole('option', { name: 'Claude.ai Web chat' })).not.toContainText('copy & paste'); // no duplicated suffix
   const colors = await pop.locator('.mp-row-name').first().evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el.closest('.mp-pop')!).backgroundColor]);
   expect(colors[0]).not.toEqual(colors[1]);
   await pop.locator('.mp-row', { hasText: 'ChatGPT' }).click();
@@ -186,7 +215,7 @@ test('sheet: instant calque gloss, several models at once, compare versions', as
   await expect(page.locator('.sheet .sh-gloss')).toHaveText('folk'); // from the calque, no request
   expect(requests).toHaveLength(0);
   await page.locator('.sheet .sh-actions >> text=Several models').click();
-  const boxes = page.locator('.sheet .many-row input:not([disabled])');
+  const boxes = page.locator('.sheet .many-row').filter({ hasNotText: 'claude.ai account' }).locator('input:not([disabled])'); // API models only (Claude ones queue for the bridge)
   const n = await boxes.count();
   expect(n).toBeGreaterThanOrEqual(2);
   for (let i = 0; i < n; i++) await boxes.nth(i).check();
@@ -199,4 +228,22 @@ test('sheet: instant calque gloss, several models at once, compare versions', as
     await expect(page.locator('.sheet .compare-col')).toHaveCount(2);
     await expect(page.locator('.sheet.wide')).toBeVisible();
   }
+});
+
+test('new text: language, title, author and prompts are filled in from the text', async ({ page }) => {
+  await page.goto('/#/');
+  await page.locator('.hero >> text=New text').click();
+  const content =
+    'Vom Lesen und Schreiben\n\nAls Zarathustra zum Volke sprach, schlugen sie Pauken und lachten über die Busspredigern; sie haben Ohren und hören nicht, ' +
+    'und ihre Bildung zeichnet sie aus vor den Ziegenhirten. Muss man ihnen erst die Ohren zerschlagen, dass sie lernen, mit den Augen hören?';
+  await page.locator('.modal textarea.text-input').fill(content);
+  const field = (name: string) => page.locator('.modal .field', { has: page.locator(`span:text-is("${name}")`) });
+  await expect(field('Title').locator('input')).toHaveValue('Vom Lesen und Schreiben');
+  await expect(field('Author').locator('input')).toHaveValue('Friedrich Nietzsche');
+  await expect(field('Language').locator('select option:checked')).toHaveText('German');
+  await expect(field('Word prompt').locator('select option:checked')).toHaveText('Nietzsche word'); // like Zarathustra Vorrede 5
+  await expect(page.locator('.auto-hint')).toContainText('Zarathustra Vorrede 5');
+  await field('Author').locator('input').fill('F. N.'); // edited by hand: kept
+  await page.locator('.modal textarea.text-input').fill(content + ' Und also sprach Zarathustra.');
+  await expect(field('Author').locator('input')).toHaveValue('F. N.');
 });

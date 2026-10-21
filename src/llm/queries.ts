@@ -7,10 +7,11 @@ import { alignCalque, docSig } from '../calque/align';
 import { defaultPrompt, docFor, langName, sentenceAround, targetKey, type Target } from '../data/selectors';
 import { getRec, patch, put, uid, useStore } from '../data/store';
 import type { ChatMsg, Model, Prompt, Text, Translation } from '../model/types';
+import { onOrphanAnswer, type Resume } from './bridge';
 import { activeModel, fillPrompt, modelLabel, runModel, type RunResult } from './run';
 import type { Turn } from './request';
 
-export type QueryKind = 'word' | 'passage' | 'chat' | 'calque';
+export type QueryKind = 'word' | 'passage' | 'chat' | 'calque' | 'clarify';
 
 export interface Query {
   id: string;
@@ -30,6 +31,7 @@ export interface Query {
   model: string;
   request?: { url: string; body: string };
   events?: string[];
+  bridge?: boolean; // answered through the Claude bridge (copy & paste of whole batches)
 }
 
 export const useQueries = create<{ queries: Query[] }>(() => ({ queries: [] }));
@@ -43,8 +45,9 @@ export const runningFor = (key: string) => useQueries.getState().queries.find((q
 export const isFor = (q: Query, key: string) => q.key === key || q.key.startsWith(`${key}#`);
 
 /** Streams into the query, batching UI updates to ~16/s. */
-async function execute(q: Query, model: Model, turns: Turn[], bodyOverride?: string): Promise<RunResult | null> {
+async function execute(q: Query, model: Model, turns: Turn[], bodyOverride?: string, resume?: Resume): Promise<RunResult | null> {
   const ctl = new AbortController();
+  if (model.provider === 'claude') update(q.id, { bridge: true });
   controllers.set(q.id, ctl);
   let content = '';
   let reasoning = '';
@@ -64,6 +67,7 @@ async function execute(q: Query, model: Model, turns: Turn[], bodyOverride?: str
         timer ??= setTimeout(flushNow, 60);
       },
       bodyOverride,
+      { label: `${q.kind === 'chat' ? 'Follow-up' : q.kind === 'calque' ? 'Calque' : q.kind === 'word' ? 'Word' : q.kind === 'passage' ? 'Passage' : 'Clarify'} · ${q.title}`, resume },
     );
     if (timer) clearTimeout(timer);
     update(q.id, { content: r.content, reasoning: r.reasoning, firstTokenMs: r.firstTokenMs, request: r.request, events: r.events });
@@ -108,7 +112,8 @@ export interface LookupPlan {
 export function planLookup(target: Target, promptId?: string, modelId?: string): LookupPlan {
   const textRec = getRec('texts', target.textId);
   const prompt = getRec('prompts', promptId) ?? defaultPrompt(target.kind, textRec, target.lang);
-  const textModel = getRec('models', target.kind === 'word' ? textRec?.wordModelId : textRec?.passageModelId);
+  const mine = getRec('readings', target.textId);
+  const textModel = getRec('models', target.kind === 'word' ? mine?.wordModelId : mine?.passageModelId);
   const model = getRec('models', modelId) ?? textModel ?? activeModel();
   const doc = textRec ? docFor(textRec) : null;
   const sentence = target.sentence ?? (doc && target.anchor ? sentenceAround(doc, target.anchor[0], target.anchor[1]) : undefined);
@@ -138,17 +143,10 @@ export function startLookup(target: Target, opts: { promptId?: string; modelId?:
   const promptText = opts.promptText ?? plan.text;
   const turns: Turn[] = [...(plan.prompt?.system ? [{ role: 'system' as const, content: plan.prompt.system }] : []), { role: 'user', content: promptText }];
   const q = addQuery({ key, kind: target.kind, title: target.text, target, model: modelLabel(model) });
-  void execute(q, model, turns, opts.body).then((r) => {
+  const fields = { prompt: promptText, promptName: plan.prompt?.name, model: model.model, provider: model.provider };
+  void execute(q, model, turns, opts.body, { type: 'lookup', target, fields }).then((r) => {
     if (!r) return;
-    const saved = saveTranslation(target, {
-      prompt: promptText,
-      promptName: plan.prompt?.name,
-      model: model.model,
-      servedBy: r.servedBy,
-      provider: model.provider,
-      content: r.content,
-      reasoning: r.reasoning || undefined,
-    });
+    const saved = saveTranslation(target, { ...fields, servedBy: r.servedBy, content: r.content, reasoning: r.reasoning || undefined });
     update(q.id, { status: 'done', resultId: saved.id });
   });
   return q.id;
@@ -182,8 +180,8 @@ export function chatTurns(tr: { prompt: string; content: string; chat?: ChatMsg[
 
 /** The model a follow-up goes to: chosen, else the text's model for that kind (as for a new translation), else the active one. */
 export function chatModel(tr: Pick<Translation, 'kind' | 'textId'>, modelId?: string): Model | undefined {
-  const text = getRec('texts', tr.textId);
-  return getRec('models', modelId) ?? getRec('models', tr.kind === 'word' ? text?.wordModelId : text?.passageModelId) ?? activeModel();
+  const mine = getRec('readings', tr.textId);
+  return getRec('models', modelId) ?? getRec('models', tr.kind === 'word' ? mine?.wordModelId : mine?.passageModelId) ?? activeModel();
 }
 
 /**
@@ -228,7 +226,7 @@ export function startChat(kind: 'translations' | 'calques', id: string, message:
   const userMsg: ChatMsg = { role: 'user', content: message, at: Date.now() };
   patch(kind, id, { chat: [...(rec.chat ?? []), userMsg] } as never);
   const q = addQuery({ key, kind: 'chat', title: message.slice(0, 60), model: modelLabel(model) });
-  void execute(q, model, turns).then((r) => {
+  void execute(q, model, turns, undefined, { type: 'chat', store: kind, id }).then((r) => {
     const cur = getRec(kind, id);
     if (r && cur) patch(kind, id, { chat: [...(cur.chat ?? []), { role: 'assistant', content: r.content, at: Date.now(), model: r.servedBy ?? model.model }] } as never);
     update(q.id, { status: r ? 'done' : getQuery(q.id)?.status ?? 'error' });
@@ -250,6 +248,7 @@ export function saveCalque(text: Text, raw: string, extra: { source: 'ai' | 'imp
   const now = Date.now();
   const c = put('calques', { id: uid('cq'), textId: text.id, createdAt: now, updatedAt: now, slots: a.slots, sig: docSig(doc), raw, ...extra });
   patch('texts', text.id, { calqueId: c.id });
+  if (getRec('readings', text.id)?.calqueId) patch('readings', text.id, { calqueId: undefined }); // show the new one
   return { calque: c, uncertain: a.uncertain };
 }
 
@@ -265,7 +264,7 @@ export function startCalque(text: Text, opts: { promptId?: string; modelId?: str
     { role: 'user', content: opts.promptText ?? calquePromptText(text, prompt) },
   ];
   const q = addQuery({ key, kind: 'calque', title: `Calque · ${text.title}`, model: modelLabel(model), textId: text.id });
-  void execute(q, model, turns, opts.body).then((r) => {
+  void execute(q, model, turns, opts.body, { type: 'calque', textId: text.id, promptName: prompt?.name }).then((r) => {
     if (!r) return;
     const cur = useStore.getState().texts[text.id] ?? text;
     const { calque } = saveCalque(cur, r.content, { source: 'ai', model: r.servedBy ?? model.model, promptName: prompt?.name });
@@ -285,3 +284,37 @@ export async function testModel(model: Model): Promise<string> {
     clearTimeout(timer);
   }
 }
+
+// ---------------------------------------------------------------- Claude bridge answers after a reload
+
+const clarifyHandlers = new Map<string, (data: unknown, text: string) => void>();
+
+/** One clarification request (llm/clarify.ts); its answer goes to the handler registered for `kind`. */
+export function runClarify(kind: string, title: string, model: Model, prompt: string, data: unknown): string | null {
+  const key = `clarify|${kind}|${title}|${Date.now()}`;
+  if (model.provider === 'web') return null;
+  const q = addQuery({ key, kind: 'clarify', title, model: modelLabel(model) });
+  void execute(q, model, [{ role: 'user', content: prompt }], undefined, { type: 'clarify', kind, data }).then((r) => {
+    if (r) clarifyHandlers.get(kind)?.(data, r.content);
+    update(q.id, { status: r ? 'done' : (getQuery(q.id)?.status ?? 'error'), seen: true });
+    if (r) dismissQuery(q.id);
+  });
+  return q.id;
+}
+/** Lets background clarifications apply their answers when they come back after a reload. */
+export const onClarifyAnswer = (kind: string, fn: (data: unknown, text: string) => void) => void clarifyHandlers.set(kind, fn);
+
+onOrphanAnswer((job, a) => {
+  const r = job.resume;
+  const text = a.text ?? '';
+  const servedBy = `Claude${a.model ? ` ${a.model}` : ''} (claude.ai)`;
+  if (!r) return;
+  if (r.type === 'lookup') saveTranslation(r.target as Target, { ...(r.fields as Pick<Translation, 'prompt'>), servedBy, content: text });
+  else if (r.type === 'chat') {
+    const cur = getRec(r.store, r.id);
+    if (cur) patch(r.store, r.id, { chat: [...(cur.chat ?? []), { role: 'assistant', content: text, at: Date.now(), model: servedBy }] } as never);
+  } else if (r.type === 'calque') {
+    const t = getRec('texts', r.textId);
+    if (t) saveCalque(t, text, { source: 'ai', model: servedBy, promptName: r.promptName });
+  } else if (r.type === 'clarify') clarifyHandlers.get(r.kind)?.(r.data, text);
+});

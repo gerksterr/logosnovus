@@ -1,4 +1,4 @@
-import type { ApiFormat, Provider } from '../model/types';
+import type { ApiFormat, HttpFormat, Provider } from '../model/types';
 
 export interface ProviderDef {
   id: string;
@@ -22,6 +22,7 @@ export const BUILTIN_PROVIDERS: ProviderDef[] = [
   { id: 'openai', name: 'OpenAI', format: 'openai', baseUrl: 'https://api.openai.com/v1', keyUrl: 'https://platform.openai.com/api-keys' },
   { id: 'groq', name: 'Groq', format: 'openai', baseUrl: 'https://api.groq.com/openai/v1', keyUrl: 'https://console.groq.com/keys' },
   { id: 'web', name: 'Web chat (copy & paste)', format: 'web', baseUrl: '' },
+  { id: 'claude', name: 'Claude · your claude.ai account', format: 'bridge', baseUrl: '' },
 ];
 
 export function resolveProvider(id: string, custom: Record<string, Provider>): ProviderDef | undefined {
@@ -32,7 +33,7 @@ export function resolveProvider(id: string, custom: Record<string, Provider>): P
 }
 
 /** Default JSON body per API format. {placeholders} are filled with JSON values; null fields are dropped. */
-export const DEFAULT_BODIES: Record<Exclude<ApiFormat, 'web'>, string> = {
+export const DEFAULT_BODIES: Record<HttpFormat, string> = {
   openai: `{
   "model": "{model}",
   "messages": {messages},

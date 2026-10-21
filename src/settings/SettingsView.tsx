@@ -6,8 +6,12 @@ import { confirmDialog, toast } from '../app/ui';
 import { wipe } from '../data/db';
 import { encodeShare, shareUrl } from '../data/share';
 import { alive, flush, put, remove, useStore } from '../data/store';
+import { setSetting, useSettings } from '../app/settings';
+import { BRIDGE_URL, bridgeUrl } from '../llm/bridge';
+import { estimateTokens, pendingClarifications, runClarifications } from '../llm/clarify';
+import { ModelPicker } from '../ui/ModelPicker';
 import { BUILTIN_PROVIDERS } from '../llm/providers';
-import { importLegacyCloud, signIn, signOut, syncNow, useSync } from '../sync/cloud';
+import { importLegacyCloud, isAdmin, pendingCounts, signIn, signOut, syncNow, useSync } from '../sync/cloud';
 import { STORE_NAMES, type Rec } from '../model/types';
 import { allRecords, exportBackup, ImportButton } from './Backup';
 
@@ -18,6 +22,8 @@ export function SettingsView() {
         <h1>Settings</h1>
       </div>
       <Keys />
+      <ClaudeBridge />
+      <Clarifications />
       <Sync />
       <Data />
       <Storage />
@@ -28,7 +34,7 @@ export function SettingsView() {
 function Keys() {
   const secrets = useStore((s) => s.secrets);
   const providers = useStore((s) => s.providers);
-  const list = [...BUILTIN_PROVIDERS.filter((p) => p.id !== 'web'), ...alive(providers).map((p) => ({ id: p.id, name: `${p.name} (custom)`, keyUrl: undefined }))];
+  const list = [...BUILTIN_PROVIDERS.filter((p) => p.id !== 'web' && p.id !== 'claude'), ...alive(providers).map((p) => ({ id: p.id, name: `${p.name} (custom)`, keyUrl: undefined }))];
   return (
     <section className="section">
       <h2>API keys</h2>
@@ -42,6 +48,80 @@ function Keys() {
         Free options: OpenRouter has free models (marked “free” in the model editor); Google AI Studio keys include a free Gemini tier. Copy & paste models (Claude.ai, ChatGPT,
         AI Studio) need no key at all. <button className="linkish" onClick={() => go('/prompts/models')}>Manage models →</button>
       </p>
+    </section>
+  );
+}
+
+/** Small model requests that refine local guesses (word forms, authors). */
+function Clarifications() {
+  const st = useSettings();
+  useStore((s) => s.lemmas);
+  useStore((s) => s.texts);
+  const plan = pendingClarifications();
+  return (
+    <section className="section">
+      <h2>Clarifications</h2>
+      <p className="small faint">
+        Word forms (sah, sahe, gesehen → sehen) and authors are worked out on this device without any model. A model can make them exact: it gets lists of words and
+        short excerpts, a few thousand tokens for a whole library, sent together.
+      </p>
+      <div className="seg" role="group" aria-label="Clarifications">
+        {(
+          [
+            ['off', 'Off'],
+            ['ask', 'Collect, run when I ask'],
+            ['auto', 'Run automatically'],
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} className={st.clarify === v ? 'on' : ''} onClick={() => setSetting('clarify', v)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {st.clarify !== 'off' && (
+        <div className="row" style={{ marginTop: 10 }}>
+          <ModelPicker value={st.clarifyModelId ?? ''} onChange={(id) => setSetting('clarifyModelId', id || undefined)} defaultLabel="Active model" />
+          <button className="btn" disabled={!plan.forms && !plan.meta.length} onClick={() => toast(`${runClarifications()} clarification requests sent.`)}>
+            Run now
+          </button>
+          <span className="small muted">
+            {plan.forms || plan.meta.length
+              ? `${plan.forms} word forms, ${plan.meta.length} texts waiting · about ${Math.ceil(estimateTokens(plan) / 1000)}k tokens`
+              : 'Nothing waiting.'}
+          </span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Optional: answers from the user's own claude.ai account (no key). Nothing here is needed otherwise. */
+function ClaudeBridge() {
+  const prefs = useStore((s) => s.prefs.prefs);
+  const [url, setUrl] = useState(prefs?.bridgeUrl ?? '');
+  const save = (v: string) => put('prefs', { ...(prefs && !prefs.deleted ? prefs : {}), id: 'prefs', updatedAt: 0, bridgeUrl: v.trim() || undefined });
+  return (
+    <section className="section">
+      <h2>Claude with your claude.ai account</h2>
+      <p className="small faint">
+        Optional, for people with a Claude account: pick a “Claude” model (quick, default, complex or a specific model) and requests are answered on your own account through
+        the Claude bridge page, without an API key. Requests are collected; open the bridge, paste once, paste the answers back once.
+      </p>
+      <div className="row">
+        <a className="btn" href={bridgeUrl()} target="_blank" rel="noopener noreferrer">
+          <ExternalLink size={14} /> Open the Claude bridge
+        </a>
+        <label className="grow">
+          <input
+            className="input"
+            value={url}
+            placeholder={`Bridge address (default ${BRIDGE_URL})`}
+            onChange={(e) => setUrl(e.target.value)}
+            onBlur={() => save(url)}
+            aria-label="Claude bridge address"
+          />
+        </label>
+      </div>
     </section>
   );
 }
@@ -82,6 +162,7 @@ function KeyRow({ id, name, url, value }: { id: string; name: string; url?: stri
 
 function Sync() {
   const sync = useSync();
+  const { shared } = pendingCounts();
   const prefs = useStore((s) => s.prefs.prefs);
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -105,11 +186,20 @@ function Sync() {
   return (
     <section className="section">
       <h2>
-        <Cloud size={18} /> Cloud sync
+        <Cloud size={18} /> Shared library and sync
       </h2>
       <p className="small faint">
-        Sign in with Google to keep texts, translations, calques, prompts and models in sync across your devices. Each change is uploaded on its own a few seconds after
-        it happens; other devices receive it live.
+        Texts, translations, calques, prompts and models live in one library shared by everyone who uses Logos Novus: anyone can read it, without an account. To add
+        or change anything there, sign in with Google; every change is recorded under your account. Reading positions and preferences sync privately to your account.
+        API keys stay in this browser (unless you choose to sync them privately below). Mark a text as private in its editor to keep it, its passages and its
+        calques out of the shared library.
+      </p>
+      <p className={sync.commons === 'unavailable' ? 'error-text small' : 'small muted'}>
+        {sync.commons === 'live'
+          ? `Shared library: connected${shared ? ` · ${shared} of your changes waiting to be shared${sync.user ? '' : ' (sign in to share them)'}` : ''}`
+          : sync.commons === 'connecting'
+            ? 'Shared library: connecting…'
+            : `Shared library unavailable: ${sync.commonsError ?? 'not reachable'}${isAdmin(sync.user) ? ' — see Admin → Setup.' : ''}`}
       </p>
       <p className={sync.status === 'error' ? 'error-text' : 'muted'}>
         {sync.user ? `${sync.user.name || sync.user.email} · ` : ''}

@@ -1,17 +1,22 @@
-import { BookA, BookOpen, Cloud, Coffee, Contrast, FlaskConical, Library, Moon, ScrollText, Settings, Sun } from 'lucide-react';
+import { BookA, BookOpen, Cloud, Coffee, Contrast, FlaskConical, Library, Moon, ScrollText, Settings, ShieldCheck, Sun } from 'lucide-react';
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import { getRec, initStore, merge, useStore } from '../data/store';
 import { decodeShare } from '../data/share';
 import { countBundle } from '../data/merge';
+import { AdminView } from '../admin/AdminView';
 import { LexiconView } from '../lexicon/LexiconView';
 import { LibraryView } from '../library/LibraryView';
 import { PlaygroundView } from '../library/PlaygroundView';
 import { PromptsView } from '../prompts/PromptsView';
 import { ReaderView } from '../reader/ReaderView';
 import { SettingsView } from '../settings/SettingsView';
+import { migratePersonalFields } from '../data/migrate';
+import { loadBridgeJobs } from '../llm/bridge';
+import { startAutoClarify } from '../llm/clarify';
+import { useBridgeListeners } from '../sheet/BridgeBar';
 import { Dock } from '../sheet/Dock';
 import { Sheet } from '../sheet/Sheet';
-import { startSync, useSync } from '../sync/cloud';
+import { isAdmin, startSync, useSync } from '../sync/cloud';
 import { ContextMenu, Dialogs, Toasts } from '../ui/Modal';
 import { ModelPicker } from '../ui/ModelPicker';
 import { go, useRoute, type Route } from './router';
@@ -20,6 +25,7 @@ import { confirmDialog, toast, useUI } from './ui';
 
 export function App() {
   const ready = useStore((s) => s.ready);
+  useBridgeListeners();
   const theme = useSettings((s) => s.theme);
   const route = useRoute();
   const [failed, setFailed] = useState<string | null>(null);
@@ -32,7 +38,10 @@ export function App() {
   useEffect(() => {
     initStore()
       .then(() => {
+        migratePersonalFields();
         void importShareFromHash();
+        void loadBridgeJobs();
+        startAutoClarify();
         startSync();
       })
       .catch((e) => setFailed(String(e?.message || e)));
@@ -70,6 +79,8 @@ function View({ route }: { route: Route }) {
       return <PromptsView tab={route.tab} />;
     case 'settings':
       return <SettingsView />;
+    case 'admin':
+      return <AdminView />;
     default:
       return <LibraryView />;
   }
@@ -141,7 +152,8 @@ function TopBar({ route }: { route: Route }) {
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, []);
-  const title = NAV.find(([v]) => v === route.view)?.[2] ?? '';
+  const title = route.view === 'admin' ? 'Admin' : (NAV.find(([v]) => v === route.view)?.[2] ?? '');
+  const admin = useSync((s) => isAdmin(s.user));
   return (
     <header className="topbar">
       <button className="brand" onClick={() => go('/')} title="Library">
@@ -150,6 +162,12 @@ function TopBar({ route }: { route: Route }) {
       </button>
       <span className="topbar-title">{title}</span>
       <nav className="nav-pill">
+        {admin && (
+          <button className={route.view === 'admin' ? 'on' : ''} onClick={() => go('/admin')} title="Administration">
+            <ShieldCheck size={16} />
+            <span>Admin</span>
+          </button>
+        )}
         {NAV.map(([view, path, label, Icon], i) => (
           <button key={view} className={route.view === view ? 'on' : ''} onClick={() => go(navTarget(view, path))} title={`${label} (${i + 1})`}>
             <Icon size={16} />

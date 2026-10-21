@@ -1,5 +1,6 @@
 import { getRec, useStore } from '../data/store';
 import type { Model } from '../model/types';
+import { bridgeAsk, bridgeUrl, sampleOptions, toSampleInput, type Resume } from './bridge';
 import { resolveProvider } from './providers';
 import { buildRequest, type Turn } from './request';
 import { readCompletion, type Delta, type StreamResult } from './stream';
@@ -32,7 +33,8 @@ export function activeModel(): Model | undefined {
   const chosen = getRec('models', s.prefs.prefs?.modelId);
   if (chosen) return chosen;
   const models = Object.values(s.models).filter((m) => !m.deleted);
-  const hasKey = (m: Model) => m.provider !== 'web' && (!!getRec('secrets', m.provider) || !!s.providers[m.provider]);
+  // the Claude bridge needs no key but a Claude account: never chosen for someone who did not pick it
+  const hasKey = (m: Model) => m.provider !== 'web' && m.provider !== 'claude' && (!!getRec('secrets', m.provider) || !!s.providers[m.provider]);
   return models.find(hasKey) ?? models.find((m) => m.id === 'm-web-claude') ?? models.find((m) => m.provider === 'web') ?? models[0];
 }
 
@@ -51,6 +53,8 @@ export function prepare(model: Model, turns: Turn[], bodyOverride?: string) {
   const s = useStore.getState();
   const provider = resolveProvider(model.provider, s.providers);
   if (!provider) throw new Error(`Unknown provider "${model.provider}" for model ${modelLabel(model)}.`);
+  if (provider.format === 'bridge')
+    return { url: bridgeUrl(), headers: {}, format: provider.format, body: JSON.stringify({ input: toSampleInput(turns), ...sampleOptions(model) }, null, 2) };
   const key = getRec('secrets', provider.id)?.key ?? '';
   if (!key && !provider.custom) throw new Error(`No API key for ${provider.name}. Add one in Settings → API keys.`);
   return buildRequest(model, provider, key, turns, bodyOverride);
@@ -62,8 +66,17 @@ export async function runModel(
   signal: AbortSignal,
   onDelta: (d: Delta) => void,
   bodyOverride?: string,
+  bridge?: { label: string; resume?: Resume },
 ): Promise<RunResult> {
   const req = prepare(model, turns, bodyOverride);
+  if (req.format === 'bridge') {
+    const t0 = performance.now();
+    const a = await bridgeAsk(model, turns, bridge?.label ?? 'Request', signal, bridge?.resume);
+    if (a.error || !a.text) throw new Error(a.error ? `Claude bridge: ${a.error}` : 'The Claude bridge returned no text.');
+    onDelta({ text: a.text });
+    const servedBy = `Claude${a.model ? ` ${a.model}` : ''} (claude.ai)`;
+    return { content: a.text, reasoning: '', servedBy, finish: a.truncated ? 'length' : undefined, events: [], request: { url: req.url, body: req.body }, totalMs: performance.now() - t0 };
+  }
   const t0 = performance.now();
   let first: number | undefined;
   const res = await fetch(req.url, { method: 'POST', headers: req.headers, body: req.body, signal });

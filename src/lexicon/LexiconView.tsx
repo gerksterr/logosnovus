@@ -2,10 +2,13 @@
 // calque meaning, a one-line gloss, all saved versions, and every place it
 // occurs in your texts (keyword in context, a tap opens the text there).
 
-import { BookA, ChevronDown, ChevronRight, ExternalLink, Layers, Search } from 'lucide-react';
+import { BookA, ChevronDown, ChevronRight, ExternalLink, Layers, Search, Sparkles } from 'lucide-react';
+import { useSettings } from '../app/settings';
+import { toast } from '../app/ui';
+import { estimateTokens, pendingClarifications, runClarifications } from '../llm/clarify';
 import { useEffect, useMemo, useState } from 'react';
 import { go } from '../app/router';
-import { docFor, langName, targetKey, versionsFor } from '../data/selectors';
+import { docFor, formKey, langName, targetKey, versionsFor } from '../data/selectors';
 import { alive, getRec, useStore } from '../data/store';
 import { ago } from '../library/stats';
 import type { Translation } from '../model/types';
@@ -26,6 +29,7 @@ export function LexiconView({ lang: langParam, word }: { lang?: string; word?: s
   const translations = useStore((s) => s.translations);
   const texts = useStore((s) => s.texts);
   const calques = useStore((s) => s.calques);
+  const lemmas = useStore((s) => s.lemmas);
   useStore((s) => s.langs);
 
   // languages with saved translations, most used first
@@ -41,22 +45,22 @@ export function LexiconView({ lang: langParam, word }: { lang?: string; word?: s
   const [tab, setTab] = useState<'words' | 'passages'>('words');
   const [q, setQ] = useState(word ?? '');
   const [sort, setSort] = useState<Sort>('recent');
-  const [open, setOpen] = useState<string | null>(word ? wordKey(word) : null);
+  const [open, setOpen] = useState<string | null>(null);
   useEffect(() => {
     if (word) {
       setQ(word);
-      setOpen(wordKey(word));
+      setOpen(formKey(lang, word) ?? '');
       setTab('words');
     }
   }, [word]);
 
-  const all = useMemo(() => (lang ? entries(lang, translations, texts, calques) : []), [lang, translations, texts, calques]);
+  const all = useMemo(() => (lang ? entries(lang, translations, texts, calques, lemmas) : []), [lang, translations, texts, calques, lemmas]);
   const needle = q.trim().toLowerCase();
   const list = useMemo(() => {
-    const f = all.filter((e) => !needle || e.key.includes(needle) || e.gloss.toLowerCase().includes(needle) || e.calque?.toLowerCase().includes(needle));
+    const f = all.filter((e) => !needle || e.forms.some((w) => w.toLowerCase().includes(needle)) || e.gloss.toLowerCase().includes(needle) || e.calque?.toLowerCase().includes(needle));
     const cmp: Record<Sort, (a: Entry, b: Entry) => number> = {
       recent: (a, b) => b.last - a.last,
-      alpha: (a, b) => a.key.localeCompare(b.key),
+      alpha: (a, b) => a.word.localeCompare(b.word),
       versions: (a, b) => b.versions.length - a.versions.length || b.last - a.last,
       occ: (a, b) => b.occ.length - a.occ.length || b.last - a.last,
     };
@@ -90,6 +94,7 @@ export function LexiconView({ lang: langParam, word }: { lang?: string; word?: s
             <BookA size={12} /> Lexicon
           </span>
           <h1>{langName(lang) || 'Lexicon'}</h1>
+          <ClarifyChip />
           <p>
             {all.length} words looked up{vocab ? ` · ${vocab} of them occur in your texts` : ''} · {passages.length} passages. Word translations belong to the language, so every text
             shares them.
@@ -164,6 +169,7 @@ function WordItem({ e, open, onToggle }: { e: Entry; open: boolean; onToggle: ()
         {open ? <ChevronDown size={16} className="faint" /> : <ChevronRight size={16} className="faint" />}
         <span className="lex-word" dir="auto">
           {e.word}
+          {e.forms.length > 1 && <span className="lex-forms"> · {e.forms.slice(1, 5).join(', ')}</span>}
         </span>
         <span className="lex-gloss">
           {e.calque && (
@@ -276,5 +282,20 @@ function PassageItem({ p }: { p: Translation }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Waiting clarifications (word forms, authors) with a Run button — only when there are some. */
+function ClarifyChip() {
+  const mode = useSettings((s) => s.clarify);
+  useStore((s) => s.lemmas);
+  useStore((s) => s.texts);
+  if (mode === 'off') return null;
+  const plan = pendingClarifications();
+  if (!plan.forms && !plan.meta.length) return null;
+  return (
+    <button className="badge cyan clarify-chip" onClick={() => toast(`${runClarifications()} clarification requests sent.`)} title={`About ${Math.ceil(estimateTokens(plan) / 1000)}k tokens with the model chosen in Settings`}>
+      <Sparkles size={11} /> {plan.forms} word forms to clarify · Run
+    </button>
   );
 }

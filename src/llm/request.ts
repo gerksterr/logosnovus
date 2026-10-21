@@ -83,7 +83,7 @@ function dropNulls(v: unknown): unknown {
 }
 
 export function defaultBody(provider: ProviderDef): string {
-  return provider.format === 'web' ? '' : DEFAULT_BODIES[provider.format];
+  return provider.format === 'web' || provider.format === 'bridge' ? '' : DEFAULT_BODIES[provider.format];
 }
 
 export function buildRequest(model: Model, provider: ProviderDef, key: string, turns: Turn[], bodyOverride?: string): BuiltRequest {

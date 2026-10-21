@@ -25,10 +25,16 @@ export interface Text extends Rec {
   tags?: string[];
   wordPromptId?: Id;
   passagePromptId?: Id;
-  wordModelId?: Id; // per-text model for word lookups (default: the active model)
-  passageModelId?: Id; // e.g. passages through a web chat, words through an API
+  /** @deprecated moved to Reading (personal); kept for migrating older records */
+  wordModelId?: Id;
+  /** @deprecated moved to Reading */
+  passageModelId?: Id;
   calqueId?: Id; // active calque
-  rank?: number; // custom library order; set only once moved by hand
+  private?: boolean; // kept out of the shared library (only on this account's devices)
+  auto?: ('title' | 'author' | 'lang')[]; // guessed when added and not edited since (clarifications may refine)
+  metaChecked?: number; // when a model was last asked for author/title
+  /** @deprecated moved to Reading */
+  rank?: number;
   scratch?: boolean; // the Playground text (hidden from the library)
 }
 
@@ -43,7 +49,9 @@ export interface Prompt extends Rec {
   createdAt: number;
 }
 
-export type ApiFormat = 'openai' | 'gemini' | 'anthropic' | 'web';
+export type ApiFormat = 'openai' | 'gemini' | 'anthropic' | 'web' | 'bridge';
+/** Formats spoken over HTTP (web = copy & paste via a chat site, bridge = the Claude bridge artifact). */
+export type HttpFormat = Exclude<ApiFormat, 'web' | 'bridge'>;
 
 /** A user-defined endpoint (built-in providers live in llm/providers.ts). */
 export interface Provider extends Rec {
@@ -59,10 +67,11 @@ export interface Secret extends Rec {
 
 export interface Model extends Rec {
   name: string; // empty → the model path is shown
-  provider: Id; // built-in provider id, custom Provider id, or 'web'
-  model: string; // e.g. "anthropic/claude-opus-5.5"
+  provider: Id; // built-in provider id, custom Provider id, 'web' or 'claude' (bridge)
+  model: string; // e.g. "anthropic/claude-opus-5.5"; for 'claude': quick | default | complex | a model id
   temperature?: number;
   maxTokens?: number;
+  effort?: 'low' | 'medium' | 'high'; // Claude bridge with a specific model
   body?: string; // custom JSON body template; default comes from the provider format
   siteUrl?: string; // web assist: chat site to open
   createdAt: number;
@@ -107,9 +116,24 @@ export interface Calque extends Rec {
 /** Per-text reading state and mirror-view overrides (id = text id). */
 export interface Reading extends Rec {
   pos?: number; // plain offset of the first visible word
+  calqueId?: Id; // calque shown on this account (swapped with C); default: the text's calqueId
+  rank?: number; // custom library order on this account; set only once moved by hand
+  wordModelId?: Id; // this account's model for word lookups in the text (default: the active model)
+  passageModelId?: Id; // e.g. passages through a web chat, words through an API
   keep?: number[]; // chunk start offsets shown untranslated in mirror view
   keepWords?: string[]; // word keys shown untranslated everywhere in this text
   replace?: { start: number; end: number; text: string }[]; // custom mirror text for a chunk range
+}
+
+/**
+ * Dictionary form of a word form (id = `${lang}|${normalized form}`), from a
+ * clarification or a correction. lemma '=form' keeps a form apart from look-alikes.
+ */
+export interface Lemma extends Rec {
+  lang: Id;
+  form: string;
+  lemma: string;
+  source: 'llm' | 'user';
 }
 
 /** Synced preferences (single record, id 'prefs'). */
@@ -117,6 +141,7 @@ export interface Prefs extends Rec {
   modelId?: Id; // active model
   compound?: boolean; // mirror view shows compound meanings instead of literal parts
   syncKeys?: boolean;
+  bridgeUrl?: string; // Claude bridge artifact (default: the published one)
 }
 
 export interface Stores {
@@ -130,6 +155,7 @@ export interface Stores {
   calques: Calque;
   readings: Reading;
   prefs: Prefs;
+  lemmas: Lemma;
 }
 export type StoreName = keyof Stores;
 export const STORE_NAMES: StoreName[] = [
@@ -143,6 +169,7 @@ export const STORE_NAMES: StoreName[] = [
   'calques',
   'readings',
   'prefs',
+  'lemmas',
 ];
 
 export type Records = { [K in StoreName]: Record<Id, Stores[K]> };

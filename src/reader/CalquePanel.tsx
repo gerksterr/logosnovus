@@ -8,6 +8,8 @@ import { activeModel, modelLabel, prepare } from '../llm/run';
 import type { Calque, Text } from '../model/types';
 import { Modal } from '../ui/Modal';
 import { ModelPicker } from '../ui/ModelPicker';
+import { useBridge } from '../llm/bridge';
+import { BridgeSteps } from '../sheet/BridgeBar';
 
 type Tab = 'generate' | 'paste' | 'versions' | 'align';
 
@@ -106,15 +108,17 @@ function Generate({ text, onDone }: { text: Text; onDone: () => void }) {
           <input className="input" type="number" min={256} step={1000} value={maxTokens} onChange={(e) => setMaxTokens(e.target.value ? +e.target.value : '')} />
         </label>
       </div>
-      <details className="raw">
-        <summary>Request JSON {body != null && <span className="badge">edited</span>}</summary>
-        <textarea className="input code" rows={12} spellCheck={false} value={body ?? generated} onChange={(e) => setBody(e.target.value)} />
-        {body != null && (
-          <button className="btn small ghost" onClick={() => setBody(null)}>
-            Reset to generated request
-          </button>
-        )}
-      </details>
+      {model?.provider !== 'claude' && (
+        <details className="raw">
+          <summary>Request JSON {body != null && <span className="badge">edited</span>}</summary>
+          <textarea className="input code" rows={12} spellCheck={false} value={body ?? generated} onChange={(e) => setBody(e.target.value)} />
+          {body != null && (
+            <button className="btn small ghost" onClick={() => setBody(null)}>
+              Reset to generated request
+            </button>
+          )}
+        </details>
+      )}
       {error && <p className="error-text">{error}</p>}
       <div className="row">
         {running ? (
@@ -129,6 +133,7 @@ function Generate({ text, onDone }: { text: Text; onDone: () => void }) {
         {q && <span className="small muted">{running ? `Receiving… ${q.content.length} characters` : q.status === 'error' ? '' : q.status === 'stopped' ? 'Stopped.' : ''}</span>}
       </div>
       {q?.error && <p className="error-text">{q.error}</p>}
+      {running && q?.bridge && <BridgeSteps count={useBridge.getState().jobs.length} />}
       {q && (q.content || q.reasoning) && <pre className="stream-box">{q.content || q.reasoning}</pre>}
     </div>
   );
@@ -197,7 +202,13 @@ function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
             {view === c.id ? 'Hide' : 'View'}
           </button>
           {c.id !== text.calqueId && (
-            <button className="btn small" onClick={() => patch('texts', text.id, { calqueId: c.id })}>
+            <button
+              className="btn small"
+              onClick={() => {
+                patch('texts', text.id, { calqueId: c.id });
+                if (getRec('readings', text.id)?.calqueId) patch('readings', text.id, { calqueId: undefined });
+              }}
+            >
               Use
             </button>
           )}

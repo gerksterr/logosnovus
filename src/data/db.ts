@@ -9,10 +9,11 @@ const DB_NAME = 'logosnovus';
 let handle: Promise<IDBPDatabase> | null = null;
 
 function db() {
-  handle ??= openDB(DB_NAME, 1, {
+  // version 2: lemmas. New stores are added to existing databases; nothing else changes.
+  handle ??= openDB(DB_NAME, 2, {
     upgrade(d) {
-      for (const s of STORE_NAMES) d.createObjectStore(s, { keyPath: 'id' });
-      d.createObjectStore('meta');
+      for (const s of STORE_NAMES) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
     },
   });
   return handle;
