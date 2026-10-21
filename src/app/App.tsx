@@ -180,6 +180,11 @@ function TopBar({ route }: { route: Route }) {
         <ModelPicker compact className="hide-tablet" />
         <SyncButton />
         <ThemeButton />
+        {admin && (
+          <button className={`icon-btn phone-only${route.view === 'admin' ? ' on' : ''}`} onClick={() => go('/admin')} aria-label="Admin">
+            <ShieldCheck size={19} />
+          </button>
+        )}
         <button className="icon-btn phone-only" onClick={() => go('/settings')} aria-label="Settings">
           <Settings size={19} />
         </button>

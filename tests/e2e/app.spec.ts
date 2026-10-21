@@ -33,13 +33,15 @@ test('several calques: one click or C swaps the interlinear translation', async 
   );
   await setOpenRouterKey(page);
   await page.goto('/#/read/text-z');
-  await page.locator('[title^="Calque"]').click();
-  await page.locator('.modal .tabs >> text=Generate').click();
+  const swap = page.locator('.calque-swap:visible, .mode-bar .swap:visible').first();
+  await expect(swap).toHaveText('1/1'); // one calque: the button explains how to get another
+  await swap.click();
+  await expect(page.locator('.modal .calque-hint')).toContainText('one calque so far');
+  await expect(page.locator('.modal .tabs button.on')).toHaveText('Generate');
   await page.locator('.modal >> text=Generate calque').click();
   await expect(page.locator('.modal .tabs button.on')).toHaveText('Alignment');
   await page.keyboard.press('Escape');
   const word = (w: string) => page.locator('.text .c .m', { hasText: new RegExp(`^${w}$`) });
-  const swap = page.locator('.calque-swap:visible, .mode-bar .swap:visible').first();
   await page.locator('.mode-seg button:visible, .mode-bar button:visible', { hasText: /^Mirror$/ }).first().click();
   await expect(word('Culture')).toBeVisible(); // the new calque is shown
   await expect(swap).toHaveText('2/2');
@@ -53,7 +55,14 @@ test('several calques: one click or C swaps the interlinear translation', async 
   } else await swap.click(), await swap.click();
   await expect(word('Education')).toBeVisible();
   await page.reload(); // the choice is kept
-  await expect(page.locator('.calque-swap:visible, .mode-bar .swap:visible').first()).toHaveText('1/2');
+  await expect(swap).toHaveText('1/2');
+  // the panel's versions list shows the same choice and can change it
+  await page.locator('[title^="Calque (word"]').click();
+  await expect(page.locator('.modal .list-row.active')).toContainText('imported');
+  await page.locator('.modal .list-row:not(.active) >> text=Show').click();
+  await page.keyboard.press('Escape');
+  await expect(swap).toHaveText('2/2');
+  await expect(word('Culture')).toBeVisible();
 });
 
 test('chat about a saved translation is stored on that version', async ({ page }) => {

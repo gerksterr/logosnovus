@@ -1,4 +1,4 @@
-import { Cloud, Download, ExternalLink, Link2 } from 'lucide-react';
+import { Cloud, Download, ExternalLink, Link2, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { go } from '../app/router';
@@ -27,6 +27,7 @@ export function SettingsView() {
       <Sync />
       <Data />
       <Storage />
+      <p className="small faint version">Version {__BUILD__}</p>
     </div>
   );
 }
@@ -202,9 +203,17 @@ function Sync() {
             : `Shared library unavailable: ${sync.commonsError ?? 'not reachable'}${isAdmin(sync.user) ? ' — see Admin → Setup.' : ''}`}
       </p>
       <p className={sync.status === 'error' ? 'error-text' : 'muted'}>
-        {sync.user ? `${sync.user.name || sync.user.email} · ` : ''}
+        {sync.user ? `Signed in as ${sync.user.name ? `${sync.user.name} (${sync.user.email})` : sync.user.email} · ` : ''}
         {statusText[sync.status]}
       </p>
+      {isAdmin(sync.user) && (
+        <div className="row">
+          <button className="btn primary" onClick={() => go('/admin')}>
+            <ShieldCheck size={15} /> Open the admin page
+          </button>
+          <span className="small faint">Activity of every account, undo, blocking, database setup.</span>
+        </div>
+      )}
       <div className="row">
         {sync.user ? (
           <>

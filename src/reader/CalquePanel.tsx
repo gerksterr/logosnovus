@@ -1,7 +1,7 @@
 import { Copy, ExternalLink, Square, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { confirmDialog, toast } from '../app/ui';
-import { docFor, promptsFor } from '../data/selectors';
+import { docFor, promptsFor, shownCalqueId } from '../data/selectors';
 import { alive, getRec, patch, put, remove, useStore } from '../data/store';
 import { calquePromptText, runningFor, saveCalque, startCalque, stopQuery, useQueries } from '../llm/queries';
 import { activeModel, modelLabel, prepare } from '../llm/run';
@@ -11,16 +11,18 @@ import { ModelPicker } from '../ui/ModelPicker';
 import { useBridge } from '../llm/bridge';
 import { BridgeSteps } from '../sheet/BridgeBar';
 
-type Tab = 'generate' | 'paste' | 'versions' | 'align';
+export type CalqueTab = 'generate' | 'paste' | 'versions' | 'align';
+type Tab = CalqueTab;
 
 const SOURCE_LABEL: Record<Calque['source'], string> = { ai: 'generated', import: 'pasted', web: 'web chat', edit: 'edited', legacy: 'imported' };
 
-export function CalquePanel({ text, onClose }: { text: Text; onClose: () => void }) {
+export function CalquePanel({ text, onClose, initialTab, hint }: { text: Text; onClose: () => void; initialTab?: Tab; hint?: string }) {
   const calques = useStore((s) => s.calques);
   const versions = useMemo(() => alive(calques).filter((c) => c.textId === text.id).sort((a, b) => b.createdAt - a.createdAt), [calques, text.id]);
-  const [tab, setTab] = useState<Tab>(versions.length ? 'versions' : 'generate');
+  const [tab, setTab] = useState<Tab>(initialTab ?? (versions.length ? 'versions' : 'generate'));
   return (
     <Modal title={`Calque · ${text.title}`} onClose={onClose} wide>
+      {hint && <p className="small muted calque-hint">{hint}</p>}
       <div className="seg tabs">
         {(['generate', 'paste', 'versions', 'align'] as Tab[]).map((t) => (
           <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)} disabled={t === 'align' && !text.calqueId}>
@@ -183,15 +185,23 @@ function Paste({ text, onDone, hint }: { text: Text; onDone: () => void; hint?: 
 
 function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
   const [view, setView] = useState<string | null>(null);
+  const readings = useStore((s) => s.readings); // re-render when the shown calque changes
+  const shown = readings && shownCalqueId(text);
+  // which calque is shown is this account's choice (its reading), so it never changes the shared text
+  const show = (id: string | undefined) => {
+    const r = getRec('readings', text.id);
+    put('readings', { ...(r ?? {}), id: text.id, updatedAt: 0, calqueId: id === text.calqueId ? undefined : id });
+  };
   if (!versions.length) return <div className="empty">No calque yet. Generate one or paste one.</div>;
   return (
     <div className="list">
+      {versions.length > 1 && <p className="small muted">Switch between these in the reader with the ⟲ button or the C key.</p>}
       {versions.map((c) => (
-        <div key={c.id} className={`list-row${c.id === text.calqueId ? ' active' : ''}`}>
+        <div key={c.id} className={`list-row${c.id === shown ? ' active' : ''}`}>
           <div className="grow">
             <div>
               {new Date(c.createdAt).toLocaleString()} · {SOURCE_LABEL[c.source]}
-              {c.id === text.calqueId && <span className="badge">in use</span>}
+              {c.id === shown && <span className="badge">shown</span>}
             </div>
             <div className="small muted">
               {[c.model, c.promptName, `${c.slots.filter(Boolean).length} words`].filter(Boolean).join(' · ')}
@@ -201,15 +211,9 @@ function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
           <button className="btn small ghost" onClick={() => setView(view === c.id ? null : c.id)}>
             {view === c.id ? 'Hide' : 'View'}
           </button>
-          {c.id !== text.calqueId && (
-            <button
-              className="btn small"
-              onClick={() => {
-                patch('texts', text.id, { calqueId: c.id });
-                if (getRec('readings', text.id)?.calqueId) patch('readings', text.id, { calqueId: undefined });
-              }}
-            >
-              Use
+          {c.id !== shown && (
+            <button className="btn small" onClick={() => show(c.id)}>
+              Show
             </button>
           )}
           <button
@@ -219,6 +223,7 @@ function Versions({ text, versions }: { text: Text; versions: Calque[] }) {
               if (!(await confirmDialog('Delete this calque version?'))) return;
               remove('calques', c.id);
               if (c.id === text.calqueId) patch('texts', text.id, { calqueId: versions.find((v) => v.id !== c.id)?.id });
+              if (c.id === getRec('readings', text.id)?.calqueId) show(undefined);
             }}
           >
             <Trash2 size={16} />
