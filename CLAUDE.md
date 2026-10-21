@@ -8,8 +8,11 @@ files a change needs (map below).
 
 - `npm run typecheck` — must be clean
 - `npm test` — vitest unit tests (`src/**/*.test.ts`)
-- `npm run e2e` — Playwright against the production build (desktop + phone)
-- Run all three before committing.
+- `npm run e2e` — Playwright against the production build (desktop + phone);
+  Firestore is blocked in tests (`tests/e2e/helpers.ts` `offline`)
+- `npm run test:rules` — `firestore.rules` + `sync/cloud.ts` against the
+  Firestore emulator (`tests/rules/`; needs Java)
+- Run all of them before committing.
 
 ## Invariants (most past bugs came from breaking one of these)
 
@@ -28,7 +31,9 @@ files a change needs (map below).
 4. **Every persisted record** has `id`, `updatedAt` (ms) and optional `deleted`
    (tombstone). Mutate only through `data/store.ts` (`put`, `patch`, `remove`,
    `merge`) so IndexedDB, sync and UI stay consistent. Never use localStorage for
-   data (only for small per-device settings).
+   data (only for small per-device settings). Shared stores go to `commons`
+   with a revision and a history entry in the same batch (rules enforce it);
+   secrets, readings, prefs and private texts only to `users/{uid}`.
 5. Forms with typed input never close on a backdrop click (`Modal dismissable`
    stays false); every overlay uses `useBackClose` so Android Back closes it.
 
@@ -63,7 +68,13 @@ files a change needs (map below).
 | Lexicon (words per language, glosses, concordance) | `lexicon/lexicon.ts` (tests next to it), `lexicon/LexiconView.tsx` |
 | Prompts, models, languages, endpoints | `prompts/PromptsView.tsx` |
 | Settings, keys, sync UI | `settings/SettingsView.tsx`; backup import/export `settings/Backup.tsx` |
-| Cloud sync | `sync/cloud.ts` (tests with a fake Firestore: `sync/cloud.test.ts`) |
+| Shared library (commons + history), private sync | `sync/cloud.ts`, `firestore.rules` (tests: `tests/rules/`) |
+| Admin: activity, undo, block | `sync/admin.ts` (tests next to it), `admin/AdminView.tsx` (`#/admin`) |
+| Personal fields moved from texts to readings | `data/migrate.ts` |
+| Claude bridge (claude.ai artifact, clipboard batches) | `bridge/claude-bridge.html`, `llm/bridge.ts`, `sheet/BridgeBar.tsx` (e2e: `bridge.spec.ts`) |
+| Word forms (stemming, lemmas) | `text/forms.ts`, `formKey` in `data/selectors.ts` |
+| Inferring language/title/author | `text/infer.ts`, `library/inferMeta.ts` |
+| Batched LLM clarifications | `llm/clarify.ts` |
 | Routing, Back button, device settings, toasts/dialogs | `app/router.ts`, `app/settings.ts`, `app/ui.ts` |
 | Shared UI (modal, drawer, menu, markdown, model picker) | `ui/*` |
 

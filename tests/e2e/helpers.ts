@@ -35,7 +35,13 @@ export const OLD_BACKUP = {
   decipherChats: {},
 };
 
+/** Keeps tests away from the real shared library and sign-in. */
+export async function offline(page: Page) {
+  await page.context().route(/firestore\.googleapis\.com|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com/, (r) => r.abort());
+}
+
 export async function importOldBackup(page: Page) {
+  await offline(page);
   await page.goto('/#/settings');
   await page.setInputFiles('input[type=file]', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(OLD_BACKUP)) });
   await page.click('.modal-foot >> text=Import');

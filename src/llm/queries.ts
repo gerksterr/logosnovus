@@ -112,7 +112,8 @@ export interface LookupPlan {
 export function planLookup(target: Target, promptId?: string, modelId?: string): LookupPlan {
   const textRec = getRec('texts', target.textId);
   const prompt = getRec('prompts', promptId) ?? defaultPrompt(target.kind, textRec, target.lang);
-  const textModel = getRec('models', target.kind === 'word' ? textRec?.wordModelId : textRec?.passageModelId);
+  const mine = getRec('readings', target.textId);
+  const textModel = getRec('models', target.kind === 'word' ? mine?.wordModelId : mine?.passageModelId);
   const model = getRec('models', modelId) ?? textModel ?? activeModel();
   const doc = textRec ? docFor(textRec) : null;
   const sentence = target.sentence ?? (doc && target.anchor ? sentenceAround(doc, target.anchor[0], target.anchor[1]) : undefined);
@@ -179,8 +180,8 @@ export function chatTurns(tr: { prompt: string; content: string; chat?: ChatMsg[
 
 /** The model a follow-up goes to: chosen, else the text's model for that kind (as for a new translation), else the active one. */
 export function chatModel(tr: Pick<Translation, 'kind' | 'textId'>, modelId?: string): Model | undefined {
-  const text = getRec('texts', tr.textId);
-  return getRec('models', modelId) ?? getRec('models', tr.kind === 'word' ? text?.wordModelId : text?.passageModelId) ?? activeModel();
+  const mine = getRec('readings', tr.textId);
+  return getRec('models', modelId) ?? getRec('models', tr.kind === 'word' ? mine?.wordModelId : mine?.passageModelId) ?? activeModel();
 }
 
 /**

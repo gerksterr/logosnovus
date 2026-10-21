@@ -11,7 +11,7 @@ import { BRIDGE_URL, bridgeUrl } from '../llm/bridge';
 import { estimateTokens, pendingClarifications, runClarifications } from '../llm/clarify';
 import { ModelPicker } from '../ui/ModelPicker';
 import { BUILTIN_PROVIDERS } from '../llm/providers';
-import { importLegacyCloud, signIn, signOut, syncNow, useSync } from '../sync/cloud';
+import { importLegacyCloud, isAdmin, pendingCounts, signIn, signOut, syncNow, useSync } from '../sync/cloud';
 import { STORE_NAMES, type Rec } from '../model/types';
 import { allRecords, exportBackup, ImportButton } from './Backup';
 
@@ -162,6 +162,7 @@ function KeyRow({ id, name, url, value }: { id: string; name: string; url?: stri
 
 function Sync() {
   const sync = useSync();
+  const { shared } = pendingCounts();
   const prefs = useStore((s) => s.prefs.prefs);
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>) => {
@@ -185,11 +186,20 @@ function Sync() {
   return (
     <section className="section">
       <h2>
-        <Cloud size={18} /> Cloud sync
+        <Cloud size={18} /> Shared library and sync
       </h2>
       <p className="small faint">
-        Sign in with Google to keep texts, translations, calques, prompts and models in sync across your devices. Each change is uploaded on its own a few seconds after
-        it happens; other devices receive it live.
+        Texts, translations, calques, prompts and models live in one library shared by everyone who uses Logos Novus: anyone can read it, without an account. To add
+        or change anything there, sign in with Google; every change is recorded under your account. Reading positions and preferences sync privately to your account.
+        API keys stay in this browser (unless you choose to sync them privately below). Mark a text as private in its editor to keep it, its passages and its
+        calques out of the shared library.
+      </p>
+      <p className={sync.commons === 'unavailable' ? 'error-text small' : 'small muted'}>
+        {sync.commons === 'live'
+          ? `Shared library: connected${shared ? ` · ${shared} of your changes waiting to be shared${sync.user ? '' : ' (sign in to share them)'}` : ''}`
+          : sync.commons === 'connecting'
+            ? 'Shared library: connecting…'
+            : `Shared library unavailable: ${sync.commonsError ?? 'not reachable'}${isAdmin(sync.user) ? ' — see Admin → Setup.' : ''}`}
       </p>
       <p className={sync.status === 'error' ? 'error-text' : 'muted'}>
         {sync.user ? `${sync.user.name || sync.user.email} · ` : ''}

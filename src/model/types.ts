@@ -25,12 +25,16 @@ export interface Text extends Rec {
   tags?: string[];
   wordPromptId?: Id;
   passagePromptId?: Id;
-  wordModelId?: Id; // per-text model for word lookups (default: the active model)
-  passageModelId?: Id; // e.g. passages through a web chat, words through an API
+  /** @deprecated moved to Reading (personal); kept for migrating older records */
+  wordModelId?: Id;
+  /** @deprecated moved to Reading */
+  passageModelId?: Id;
   calqueId?: Id; // active calque
+  private?: boolean; // kept out of the shared library (only on this account's devices)
   auto?: ('title' | 'author' | 'lang')[]; // guessed when added and not edited since (clarifications may refine)
   metaChecked?: number; // when a model was last asked for author/title
-  rank?: number; // custom library order; set only once moved by hand
+  /** @deprecated moved to Reading */
+  rank?: number;
   scratch?: boolean; // the Playground text (hidden from the library)
 }
 
@@ -113,6 +117,9 @@ export interface Calque extends Rec {
 export interface Reading extends Rec {
   pos?: number; // plain offset of the first visible word
   calqueId?: Id; // calque shown on this account (swapped with C); default: the text's calqueId
+  rank?: number; // custom library order on this account; set only once moved by hand
+  wordModelId?: Id; // this account's model for word lookups in the text (default: the active model)
+  passageModelId?: Id; // e.g. passages through a web chat, words through an API
   keep?: number[]; // chunk start offsets shown untranslated in mirror view
   keepWords?: string[]; // word keys shown untranslated everywhere in this text
   replace?: { start: number; end: number; text: string }[]; // custom mirror text for a chunk range

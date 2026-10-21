@@ -4,6 +4,7 @@
 import { Globe, Layers, NotebookText, Pencil, Plus, Sparkles, Square, Volume2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { defaultPrompt, langName, promptsFor } from '../data/selectors';
+import { patchReading } from '../data/migrate';
 import { alive, getRec, patch, useStore } from '../data/store';
 import { progress, textStats } from '../library/stats';
 import type { Text } from '../model/types';
@@ -116,7 +117,9 @@ function LookupRow({ text, kind }: { text: Text; kind: 'word' | 'passage' }) {
   const current = defaultPrompt(kind, text, text.lang);
   const promptKey = kind === 'word' ? 'wordPromptId' : 'passagePromptId';
   const modelKey = kind === 'word' ? 'wordModelId' : 'passageModelId';
-  const modelId = text[modelKey] && getRec('models', text[modelKey]) ? text[modelKey]! : '';
+  const mine = useStore((s) => s.readings[text.id]);
+  const chosen = mine && !mine.deleted ? mine[modelKey] : undefined;
+  const modelId = chosen && getRec('models', chosen) ? chosen : '';
   const isWeb = getRec('models', modelId)?.provider === 'web';
   const firstWeb = alive(models).find((m) => m.provider === 'web');
   return (
@@ -131,11 +134,11 @@ function LookupRow({ text, kind }: { text: Text; kind: 'word' | 'passage' }) {
           </option>
         ))}
       </select>
-      <ModelPicker compact value={modelId} onChange={(id) => patch('texts', text.id, { [modelKey]: id || undefined })} defaultLabel="Active model" className="lr-model" />
+      <ModelPicker compact value={modelId} onChange={(id) => patchReading(text.id, { [modelKey]: id || undefined })} defaultLabel="Active model" className="lr-model" />
       {firstWeb && (
         <button
           className={`btn small lr-web${isWeb ? ' violet' : ''}`}
-          onClick={() => patch('texts', text.id, { [modelKey]: isWeb ? undefined : firstWeb.id })}
+          onClick={() => patchReading(text.id, { [modelKey]: isWeb ? undefined : firstWeb.id })}
           title={isWeb ? 'Back to the active model' : `Ask through ${firstWeb.name} (copy & paste, no key)`}
         >
           <Globe size={13} /> Web assist

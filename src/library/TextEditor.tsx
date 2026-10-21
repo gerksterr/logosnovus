@@ -21,6 +21,7 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
   const [content, setContent] = useState(text?.content ?? '');
   const [wordPrompt, setWordPrompt] = useState(text?.wordPromptId ?? '');
   const [passagePrompt, setPassagePrompt] = useState(text?.passagePromptId ?? '');
+  const [priv, setPriv] = useState(!!text?.private);
   // A new text fills in what it can from its content (and the most similar text in the library)
   // until a field is edited by hand.
   const [touched, setTouched] = useState<Set<string>>(() => new Set());
@@ -43,7 +44,8 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
 
   const dirty =
     title !== (text?.title ?? '') || author !== (text?.author ?? '') || content !== (text?.content ?? '') || lang !== (text?.lang ?? langs[0]?.id ?? '') ||
-    wordPrompt !== (text?.wordPromptId ?? '') || passagePrompt !== (text?.passagePromptId ?? '') || tagList.join(',') !== (text?.tags ?? []).join(',');
+    wordPrompt !== (text?.wordPromptId ?? '') || passagePrompt !== (text?.passagePromptId ?? '') || tagList.join(',') !== (text?.tags ?? []).join(',') ||
+    priv !== !!text?.private;
 
   const close = async () => {
     if (!dirty || (await confirmDialog('Discard your changes?', 'Discard'))) onClose();
@@ -60,6 +62,7 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
       wordPromptId: wordPrompt || undefined,
       passagePromptId: passagePrompt || undefined,
       auto: text ? text.auto?.filter((f) => !touched.has(f)) : auto.length ? auto : undefined,
+      private: priv || undefined,
       updatedAt: now,
     } as Text);
     onClose();
@@ -154,6 +157,10 @@ export function TextEditor({ text, onClose }: { text?: Text; onClose: () => void
           )}
         </div>
       )}
+      <label className="check small">
+        <input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)} /> Private: keep this text, its passages and calques out of the shared library
+        (only on your devices)
+      </label>
       <label className="field">
         <span>Text</span>
         <textarea

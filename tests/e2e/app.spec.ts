@@ -118,8 +118,8 @@ test('model picker: readable list, switches the active model', async ({ page }) 
   const trigger = test.info().project.name === 'phone' ? page.locator('.lookup-row.passage .mp-trigger') : page.locator('.reader-bar .mp-trigger');
   await trigger.click();
   const pop = page.locator('.mp-pop');
-  await expect(pop.locator('.mp-group')).toHaveText([/API/, /Copy & paste/]);
-  await expect(pop.locator('.mp-row', { hasText: 'Claude.ai' })).not.toContainText('copy & paste'); // no duplicated suffix
+  await expect(pop.locator('.mp-group')).toHaveText([/API/, /Claude/, /Copy & paste/]);
+  await expect(pop.getByRole('option', { name: 'Claude.ai Web chat' })).not.toContainText('copy & paste'); // no duplicated suffix
   const colors = await pop.locator('.mp-row-name').first().evaluate((el) => [getComputedStyle(el).color, getComputedStyle(el.closest('.mp-pop')!).backgroundColor]);
   expect(colors[0]).not.toEqual(colors[1]);
   await pop.locator('.mp-row', { hasText: 'ChatGPT' }).click();
@@ -215,7 +215,7 @@ test('sheet: instant calque gloss, several models at once, compare versions', as
   await expect(page.locator('.sheet .sh-gloss')).toHaveText('folk'); // from the calque, no request
   expect(requests).toHaveLength(0);
   await page.locator('.sheet .sh-actions >> text=Several models').click();
-  const boxes = page.locator('.sheet .many-row input:not([disabled])');
+  const boxes = page.locator('.sheet .many-row').filter({ hasNotText: 'claude.ai account' }).locator('input:not([disabled])'); // API models only (Claude ones queue for the bridge)
   const n = await boxes.count();
   expect(n).toBeGreaterThanOrEqual(2);
   for (let i = 0; i < n; i++) await boxes.nth(i).check();

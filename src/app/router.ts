@@ -2,7 +2,7 @@
 //   #/            library        #/read/<id>[/<offset>]  reader (optionally at a word)
 //   #/lexicon[/<lang>[/<word>]]  words looked up, per language
 //   #/play        playground     #/prompts      prompts, models, languages
-//   #/settings    settings
+//   #/settings    settings       #/admin        administration of the shared library
 // Overlays (sheet, dialogs) push a history entry so Back closes them first.
 
 import { useEffect, useRef, useSyncExternalStore } from 'react';
@@ -13,7 +13,8 @@ export type Route =
   | { view: 'lexicon'; lang?: string; word?: string }
   | { view: 'play' }
   | { view: 'prompts'; tab?: string }
-  | { view: 'settings' };
+  | { view: 'settings' }
+  | { view: 'admin' };
 
 export function parseHash(hash: string): Route {
   const [, a, b, c] = hash.replace(/^#/, '').split('/');
@@ -22,6 +23,7 @@ export function parseHash(hash: string): Route {
   if (a === 'play') return { view: 'play' };
   if (a === 'prompts') return { view: 'prompts', tab: b };
   if (a === 'settings') return { view: 'settings' };
+  if (a === 'admin') return { view: 'admin' };
   return { view: 'library' };
 }
 

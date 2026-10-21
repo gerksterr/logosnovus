@@ -7,8 +7,15 @@ kept, versioned and shown in the text. A word-for-word **calque** (mirror
 translation) can be laid over the original and switched with one key.
 
 It is a static, offline-first web app: it installs on Android and desktop, works
-without a connection (except for new AI requests), and syncs across devices with
-your Google account.
+without a connection (except for new AI requests), and shares one common library
+of texts, translations and calques online: anyone can read it, changes need a
+Google sign-in, and every change is kept in a history the administrator can
+undo, per change or per account. API keys never leave your browser (unless you
+choose to sync them privately). Texts marked *Private* stay on your devices.
+
+People with a Claude account can use it as their model without an API key
+through the **Claude bridge** (a claude.ai page that answers requests on their
+own account; requests and answers travel by clipboard in batches).
 
 ## Moving over from “Symbolic Text Decipher”
 
@@ -63,10 +70,16 @@ public (or on a paid plan), and *Settings → Pages → Source* must be
 `npm run build` produces a static site in `dist/` that also runs from any other
 host or sub-path (Cloudflare Pages, Netlify…).
 
-Google sign-in uses the existing Firebase project (`src/firebase-config.json`).
-Add the new site's domain once in the Firebase console → *Authentication →
-Settings → Authorized domains*. The Firestore rules in `firestore.rules` already
-restrict each account to its own data.
+Google sign-in and the shared library use the Firebase project in
+`src/firebase-config.json`. One-time setup (the administrator page,
+`#/admin` → *Setup*, has buttons for both):
+
+1. Firestore → *Rules*: replace the rules with `firestore.rules` and publish.
+2. Authentication → *Settings → Authorized domains*: add the site's domain.
+
+The rules allow reading to everyone, writing to signed-in, unblocked accounts,
+and require each write to add a history entry with the same content, so every
+change can be traced and undone. The administrator is `gerksterr@gmail.com`.
 
 ## Development
 
@@ -76,6 +89,7 @@ npm run dev        # http://localhost:5173
 npm test           # unit tests (vitest)
 npm run e2e        # browser tests (Playwright, builds first)
 npm run typecheck
+npm run test:rules # security rules + sync against the Firestore emulator (needs Java)
 ```
 
 See `CLAUDE.md` for how the code is organized.
