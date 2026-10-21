@@ -47,7 +47,7 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
   const bodyRef = useRef<HTMLDivElement>(null);
   const [mode, setModeState] = useState<DisplayMode>(() => (localStorage.getItem(modeKey(textId)) as DisplayMode) || 'orig');
   const [sel, setSel] = useState(-1);
-  const [panel, setPanel] = useState<null | 'notes' | 'calque' | 'options' | 'edit'>(null);
+  const [panel, setPanel] = useState<null | 'notes' | 'calque' | 'calque-more' | 'options' | 'edit'>(null);
   const [selRange, setSelRange] = useState<[number, number] | null>(null);
   const sheetOpen = useUI((u) => !!u.sheet);
   const narrow = useNarrow(bodyRef);
@@ -83,7 +83,8 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
   const versions = useMemo(() => calquesOf(textId, allCalques), [allCalques, textId]);
   const shownIdx = versions.findIndex((v) => v.id === data?.calque?.id);
   const swapCalque = useCallback(() => {
-    if (versions.length < 2 || !data) return;
+    if (!data) return;
+    if (versions.length < 2) return setPanel('calque-more'); // nothing to swap yet: show how to get another
     const i = (shownIdx + 1) % versions.length;
     const next = versions[i];
     const r = useStore.getState().readings[textId];
@@ -96,7 +97,7 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement).closest('input, textarea, select, [contenteditable]')) return;
-      if (!data?.slots || useUI.getState().dialog) return;
+      if (!data?.slots || useUI.getState().dialog || panel) return;
       const k = e.key.toLowerCase();
       if (k === 'm') setMode(mode === 'mirror' ? 'aligned' : 'mirror');
       else if (k === 'o') setMode('orig');
@@ -105,7 +106,7 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
     };
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
-  }, [data?.slots, mode, setMode, swapCalque]);
+  }, [data?.slots, mode, setMode, swapCalque, panel]);
 
   // ---- scroll memory: restore once per opened text, save while reading
   const restored = useRef(false);
@@ -218,9 +219,13 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
             ))}
           </div>
         )}
-        {versions.length > 1 && (
-          <button className="btn small calque-swap hide-mobile" onClick={swapCalque} title={`Show the next calque (C) · now: ${data.calque ? calqueLabel(data.calque) : ''}`}>
-            <Repeat size={14} /> {shownIdx + 1}/{versions.length}
+        {hasCalque && (
+          <button
+            className="btn small calque-swap hide-mobile"
+            onClick={swapCalque}
+            title={versions.length > 1 ? `Show the next calque (C) · now: ${data.calque ? calqueLabel(data.calque) : ''}` : 'Only one calque so far: make another to switch between them (C)'}
+          >
+            <Repeat size={14} /> {Math.max(shownIdx, 0) + 1}/{versions.length || 1}
           </button>
         )}
         <ModelPicker compact className="reader-model" />
@@ -263,11 +268,9 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
               {label}
             </button>
           ))}
-          {versions.length > 1 && (
-            <button className="swap" onClick={swapCalque} title="Show the next calque" aria-label={`Calque ${shownIdx + 1} of ${versions.length}: show the next`}>
-              <Repeat size={14} /> {shownIdx + 1}/{versions.length}
-            </button>
-          )}
+          <button className="swap" onClick={swapCalque} title="Show the next calque" aria-label={`Calque ${Math.max(shownIdx, 0) + 1} of ${versions.length || 1}: show the next`}>
+            <Repeat size={14} /> {Math.max(shownIdx, 0) + 1}/{versions.length || 1}
+          </button>
         </div>
       )}
 
@@ -297,6 +300,14 @@ export function ReaderView({ textId, embedded = false, at }: { textId: string; e
 
       {panel === 'notes' && <NotesDrawer data={data} onClose={() => setPanel(null)} />}
       {panel === 'calque' && <CalquePanel text={text} onClose={() => setPanel(null)} />}
+      {panel === 'calque-more' && (
+        <CalquePanel
+          text={text}
+          initialTab="generate"
+          hint="This text has one calque so far. Generate another (with another model or prompt) or paste one; then the ⟲ button or the C key switches between them."
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === 'options' && <ReaderOptions onClose={() => setPanel(null)} />}
       {panel === 'edit' && <TextEditor text={text} onClose={() => setPanel(null)} />}
     </div>

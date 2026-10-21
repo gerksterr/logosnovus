@@ -250,6 +250,7 @@ async function listenCommons() {
     const q = cursor ? fs.query(col, fs.where('s', '>', fs.Timestamp.fromMillis(cursor))) : fs.query(col);
     unsubCommons = fs.onSnapshot(
       q,
+      { includeMetadataChanges: true }, // so the switch from cached to server data is heard
       async (snap) => {
         const bundle: Partial<Record<StoreName, Rec[]>> = {};
         let max = (await getMeta<number>('commonsCursor')) ?? 0;
@@ -269,7 +270,9 @@ async function listenCommons() {
         persistRevs();
         if (Object.keys(bundle).length) merge(bundle as never, 'sync');
         await setMeta('commonsCursor', max);
-        useSync.setState({ commons: 'live', commonsError: undefined, lastPull: Date.now() });
+        // data from this device's cache only: not connected yet (offline, or the server is unreachable)
+        if (snap.metadata.fromCache) useSync.setState({ commons: 'connecting' });
+        else useSync.setState({ commons: 'live', commonsError: undefined, lastPull: Date.now() });
         if (first) (first = false), resolveFirst();
       },
       (err) => {

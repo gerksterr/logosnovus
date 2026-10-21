@@ -1545,3 +1545,18 @@ tr.blocked {
   margin: 0;
   font: 600 17px var(--serif);
 }
+.admin .filter-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.admin .filter-row .search {
+  grid-column: 1 / -1;
+}
+.admin .filter-row select.input,
+.admin .filter-row input.date {
+  width: 100%;
+}
+.version {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

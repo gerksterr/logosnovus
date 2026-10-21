@@ -1,11 +1,22 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+
+// Shown in Settings, so it is clear which build a device is running.
+const build = (() => {
+  try {
+    return execSync('git log -1 --format="%h · %cd" --date=format:"%Y-%m-%d %H:%M"').toString().trim();
+  } catch {
+    return 'dev';
+  }
+})();
 
 // Static, offline-first build. `base: './'` lets the same build run from any
 // host or sub-path (Cloudflare Pages, Netlify, GitHub Pages /logosnovus/, a USB stick).
 export default defineConfig({
   base: './',
+  define: { __BUILD__: JSON.stringify(build) },
   plugins: [
     react(),
     VitePWA({
